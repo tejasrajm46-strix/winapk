@@ -37,8 +37,13 @@ export function App() {
   const [error, setError] = useState<DwError | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const mounted = useRef(true);
+  // The library is refreshed from several places (events, poll, after an
+  // action). Overlapping calls would each spawn adb work, so only one runs.
+  const appsInFlight = useRef(false);
 
   const refreshApps = useCallback(async () => {
+    if (appsInFlight.current) return;
+    appsInFlight.current = true;
     try {
       const list = await backend.listApps();
       if (!mounted.current) return;
@@ -48,6 +53,8 @@ export function App() {
       if (!mounted.current) return;
       setApps(null);
       setAppsError(backend.toDwError(err));
+    } finally {
+      appsInFlight.current = false;
     }
   }, []);
 

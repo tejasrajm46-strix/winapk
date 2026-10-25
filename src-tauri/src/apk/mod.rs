@@ -303,10 +303,10 @@ struct Badging {
 /// The SDK's aapt2 resolves resource references (label, icon) that the manifest
 /// alone cannot. Entirely optional: without it those fields stay unavailable.
 fn enrich_with_aapt2(aapt2: &Path, apk: &Path) -> DwResult<Badging> {
-    let output = std::process::Command::new(aapt2)
-        .arg("dump")
-        .arg("badging")
-        .arg(apk)
+    let mut command = std::process::Command::new(aapt2);
+    command.arg("dump").arg("badging").arg(apk);
+    crate::proc::no_console(&mut command);
+    let output = command
         .output()
         .map_err(|e| DwError::io(ErrorCode::BackendFailure, "aapt2 could not be started.", &e))?;
     if !output.status.success() {

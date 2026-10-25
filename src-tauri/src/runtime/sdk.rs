@@ -194,10 +194,10 @@ pub fn accel_report(emulator: &Path) -> Option<String> {
     if !emulator.is_file() {
         return None;
     }
-    let output = std::process::Command::new(emulator)
-        .arg("-accel-check")
-        .output()
-        .ok()?;
+    let mut cmd = std::process::Command::new(emulator);
+    cmd.arg("-accel-check");
+    crate::proc::no_console(&mut cmd);
+    let output = cmd.output().ok()?;
     let text = format!(
         "{}{}",
         String::from_utf8_lossy(&output.stdout),

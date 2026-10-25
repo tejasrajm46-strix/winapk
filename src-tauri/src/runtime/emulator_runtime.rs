@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tokio::process::Child;
 
@@ -32,6 +32,9 @@ const DISPLAY_HEIGHT: u32 = 1170;
 const DISPLAY_DPI: u32 = 420;
 const WINDOW_WIDTH: u32 = 420;
 const WINDOW_HEIGHT: u32 = 900;
+/// Environment discovery launches the emulator once to read its acceleration
+/// report. That answer only changes when the SDK does, so it is cached.
+const ENV_TTL: Duration = Duration::from_secs(30);
 
 struct WindowEntry {
     child: Arc<tokio::sync::Mutex<Child>>,
@@ -66,6 +69,14 @@ pub struct EmulatorRuntime {
     events: Arc<dyn RuntimeEvents>,
     emulator_child: tokio::sync::Mutex<Option<Child>>,
     windows: Arc<Mutex<HashMap<String, WindowEntry>>>,
+    /// Collapses concurrent "make the runtime ready" requests into one boot.
+    /// Without it, a start request racing an install could boot two emulators
+    /// against the same port.
+    boot: tokio::sync::Mutex<()>,
+    /// Serialises the check-then-spawn of a window so a double click cannot
+    /// produce two scrcpy processes for the same package.
+    launch: tokio::sync::Mutex<()>,
+    env_cache: Mutex<Option<(Instant, EnvReport)>>,
 }
 
 impl EmulatorRuntime {
@@ -75,6 +86,9 @@ impl EmulatorRuntime {
             events,
             emulator_child: tokio::sync::Mutex::new(None),
             windows: Arc::new(Mutex::new(HashMap::new())),
+            boot: tokio::sync::Mutex::new(()),
+            launch: tokio::sync::Mutex::new(()),
+            env_cache: Mutex::new(None),
         }
     }
 
@@ -90,8 +104,37 @@ impl EmulatorRuntime {
         Sdk::locate(None).map(|sdk| Adb::new(sdk.adb()))
     }
 
-    /// Filesystem + emulator self-report. Cheap enough to call on every refresh.
+    /// Cached environment report. Discovery stats the SDK and asks the emulator
+    /// for its acceleration status (a process launch), and the answer cannot
+    /// change between polls, so it is kept until something invalidates it.
     pub fn probe(&self) -> EnvReport {
+        if let Ok(cache) = self.env_cache.lock() {
+            if let Some((at, report)) = cache.as_ref() {
+                if at.elapsed() < ENV_TTL {
+                    return report.clone();
+                }
+            }
+        }
+        self.probe_now()
+    }
+
+    /// Fresh discovery: every filesystem check and the acceleration probe run
+    /// again. Used by an explicit refresh and after the SDK could have changed.
+    pub fn probe_now(&self) -> EnvReport {
+        let report = self.discover_env();
+        if let Ok(mut cache) = self.env_cache.lock() {
+            *cache = Some((Instant::now(), report.clone()));
+        }
+        report
+    }
+
+    pub fn invalidate_env(&self) {
+        if let Ok(mut cache) = self.env_cache.lock() {
+            *cache = None;
+        }
+    }
+
+    fn discover_env(&self) -> EnvReport {
         let mut report = EnvReport::default();
         let Some(sdk) = Sdk::locate(None) else {
             report.blocking.push(
@@ -275,14 +318,10 @@ impl EmulatorRuntime {
 
     async fn adb_api(&self) -> Option<u32> {
         let adb = self.adb()?;
-        let serial = Self::config().serial();
-        if !adb.connect_ready(&serial).await {
-            return None;
+        match adb.readiness(&Self::config().serial()).await {
+            Ok(ready) if ready.booted => ready.api,
+            _ => None,
         }
-        if !adb.boot_completed(&serial).await {
-            return None;
-        }
-        adb.api_level(&serial).await
     }
 
     fn emit(&self, op: &str, stage: Stage, message: impl Into<String>, package_id: Option<String>) {
@@ -297,6 +336,10 @@ impl EmulatorRuntime {
 
     /// Bring the runtime to a point where adb install can run.
     pub async fn ensure_ready(&self, store: &Store, op: &str) -> DwResult<RuntimeStatus> {
+        // Single flight: a second caller waits for the boot already in progress
+        // instead of launching a competing emulator on the same port.
+        let _booting = self.boot.lock().await;
+
         let env = self.probe();
         if !env.ready() {
             return Err(DwError::new(
@@ -316,8 +359,16 @@ impl EmulatorRuntime {
         let config = Self::config();
         let serial = config.serial();
 
-        if adb.connect_ready(&serial).await && adb.boot_completed(&serial).await {
-            return Ok(self.status(store).await);
+        // A device that is online but still booting must be awaited, not
+        // duplicated.
+        let mut present = false;
+        match adb.readiness(&serial).await {
+            Ok(ready) if ready.booted => return Ok(self.status(store).await),
+            Ok(_) => present = true,
+            Err(_) => {}
+        }
+        if !present && adb.connect_ready(&serial).await {
+            present = true;
         }
 
         self.emit(
@@ -326,14 +377,13 @@ impl EmulatorRuntime {
             "Preparing the virtual device.",
             None,
         );
-        let created = emulator::ensure_avd(&sdk, &config).await?;
-        if created {
-            tracing::info!("created AVD {AVD_NAME}");
-        }
-
-        let already_running = adb.connect_ready(&serial).await;
-        if !already_running {
-            let child = emulator::spawn(&sdk, &config)?;
+        if !present {
+            let created = emulator::ensure_avd(&sdk, &config).await?;
+            if created {
+                tracing::info!("created AVD {AVD_NAME}");
+            }
+            let log = crate::diag::log_dir(&self.data_dir).join("emulator.log");
+            let child = emulator::spawn(&sdk, &config, &log)?;
             *self.emulator_child.lock().await = Some(child);
             adb.start().await.ok();
         }
@@ -428,11 +478,14 @@ impl EmulatorRuntime {
             )
         })?;
         let serial = Self::config().serial();
-        if !adb.connect_ready(&serial).await || !adb.boot_completed(&serial).await {
-            return Err(DwError::new(
-                ErrorCode::RuntimeUnavailable,
-                "The Android runtime is not running.",
-            ));
+        match adb.readiness(&serial).await {
+            Ok(ready) if ready.booted => {}
+            _ => {
+                return Err(DwError::new(
+                    ErrorCode::RuntimeUnavailable,
+                    "The Android runtime is not running.",
+                ))
+            }
         }
 
         let packages = adb.third_party_packages(&serial).await?;
@@ -485,13 +538,7 @@ impl EmulatorRuntime {
     ) -> DwResult<AppWindow> {
         // One window per package: launching an app that is already open brings
         // the existing window's facts back rather than opening a duplicate.
-        if let Some(existing) = self.windows.lock().ok().and_then(|w| {
-            w.get(package_id).map(|e| AppWindow {
-                package_id: package_id.to_string(),
-                title: e.title.clone(),
-                pid: e.pid,
-            })
-        }) {
+        if let Some(existing) = self.existing_window(package_id) {
             return Ok(existing);
         }
 
@@ -513,6 +560,13 @@ impl EmulatorRuntime {
                 "The window host (scrcpy) is missing.",
             )
         })?;
+
+        // The check above and the spawn below must be one step: two clicks in
+        // quick succession would otherwise both find no window and both open one.
+        let gate = self.launch.lock().await;
+        if let Some(existing) = self.existing_window(package_id) {
+            return Ok(existing);
+        }
 
         let index = self.windows.lock().map(|w| w.len()).unwrap_or(0) as i32;
         let title = format!("DroidWin — {}", label.unwrap_or(package_id));
@@ -551,6 +605,9 @@ impl EmulatorRuntime {
         }
         self.watch_window(package_id.to_string(), child);
         self.events.apps_changed();
+        // The window is registered; the readiness wait below must not hold the
+        // gate, or a second app could not be launched meanwhile.
+        drop(gate);
 
         // A window plus a live scrcpy process is not proof that Android started
         // the app: a blocked background activity launch leaves an empty window.
@@ -596,6 +653,16 @@ impl EmulatorRuntime {
             package_id: package_id.to_string(),
             title,
             pid,
+        })
+    }
+
+    fn existing_window(&self, package_id: &str) -> Option<AppWindow> {
+        self.windows.lock().ok().and_then(|w| {
+            w.get(package_id).map(|entry| AppWindow {
+                package_id: package_id.to_string(),
+                title: entry.title.clone(),
+                pid: entry.pid,
+            })
         })
     }
 
@@ -720,18 +787,23 @@ impl EmulatorRuntime {
         for package in packages {
             let _ = self.close_window(&package).await;
         }
+        // Only an emulator this process started is ours to stop. One the user
+        // launched themselves stays running.
+        let owned = self.emulator_child.lock().await.take();
+        let Some(mut child) = owned else {
+            tracing::info!("the runtime was not started by DroidWin; leaving it running");
+            return;
+        };
         // Stop Android first (clean console shutdown), then make sure no qemu
         // process survives its launcher.
         if let Some(adb) = self.adb() {
             let _ = adb.emu_kill(&Self::config().serial()).await;
         }
-        if let Some(mut child) = self.emulator_child.lock().await.take() {
-            if let Some(pid) = child.id() {
-                emulator::kill_tree(pid);
-            }
-            let _ = child.start_kill();
-            let _ = child.wait().await;
+        if let Some(pid) = child.id() {
+            emulator::kill_tree(pid);
         }
+        let _ = child.start_kill();
+        let _ = child.wait().await;
     }
 }
 

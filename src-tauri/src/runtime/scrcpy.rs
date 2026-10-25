@@ -8,6 +8,7 @@ use std::process::Stdio;
 use tokio::process::{Child, Command};
 
 use crate::domain::{DwError, DwResult, ErrorCode};
+use crate::proc;
 
 #[derive(Debug, Clone)]
 pub struct WindowRequest {
@@ -61,6 +62,9 @@ pub fn spawn(exe: &Path, req: &WindowRequest) -> DwResult<Child> {
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .kill_on_drop(false);
+    // No console for the window host. Its SDL window is unaffected: the flag
+    // suppresses the console, not the app window.
+    proc::no_console_async(&mut cmd);
 
     cmd.spawn().map_err(|e| {
         DwError::io(
@@ -72,10 +76,10 @@ pub fn spawn(exe: &Path, req: &WindowRequest) -> DwResult<Child> {
 }
 
 pub fn version(exe: &Path) -> Option<String> {
-    let output = std::process::Command::new(exe)
-        .arg("--version")
-        .output()
-        .ok()?;
+    let mut cmd = std::process::Command::new(exe);
+    cmd.arg("--version");
+    proc::no_console(&mut cmd);
+    let output = cmd.output().ok()?;
     let text = String::from_utf8_lossy(&output.stdout);
     text.lines()
         .next()

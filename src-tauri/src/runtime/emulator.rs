@@ -2,6 +2,7 @@
 //! app windows are produced by scrcpy against virtual displays — so it runs with
 //! `-no-window` and is driven entirely through adb.
 
+use std::path::Path;
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
@@ -10,6 +11,7 @@ use tokio::process::{Child, Command};
 use super::adb::Adb;
 use super::sdk::{self, Sdk};
 use crate::domain::{DwError, DwResult, ErrorCode};
+use crate::proc;
 
 #[derive(Debug, Clone)]
 pub struct AvdConfig {
@@ -36,11 +38,9 @@ pub async fn ensure_avd(sdk: &Sdk, cfg: &AvdConfig) -> DwResult<bool> {
             "The SDK's avdmanager was not found, so DroidWin cannot create its virtual device.",
         )
         .detail(format!("Expected {}", manager.display())));
-    }
-
-    // A .bat needs cmd.exe; arguments are separate so no shell interpolation happens.
-    let mut child = Command::new("cmd")
-        .arg("/c")
+    } // A .bat needs cmd.exe; arguments are separate so no shell interpolation happens.
+    let mut cmd = Command::new("cmd");
+    cmd.arg("/c")
         .arg(&manager)
         .args([
             "create",
@@ -56,15 +56,16 @@ pub async fn ensure_avd(sdk: &Sdk, cfg: &AvdConfig) -> DwResult<bool> {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|e| {
-            DwError::io(
-                ErrorCode::RuntimeStartFailed,
-                "avdmanager could not start.",
-                &e,
-            )
-        })?;
+        .kill_on_drop(true);
+    // avdmanager is a .bat run through cmd.exe: hidden, never a console flash.
+    proc::no_console_async(&mut cmd);
+    let mut child = cmd.spawn().map_err(|e| {
+        DwError::io(
+            ErrorCode::RuntimeStartFailed,
+            "avdmanager could not start.",
+            &e,
+        )
+    })?;
 
     if let Some(mut stdin) = child.stdin.take() {
         use tokio::io::AsyncWriteExt;
@@ -111,7 +112,9 @@ pub async fn ensure_avd(sdk: &Sdk, cfg: &AvdConfig) -> DwResult<bool> {
 }
 
 /// Start the emulator headless and hand back the child so it can be stopped.
-pub fn spawn(sdk: &Sdk, cfg: &AvdConfig) -> DwResult<Child> {
+/// Its stderr goes to `log`: the emulator is chatty, and an unread pipe would
+/// eventually fill and block the VM instead of merely losing diagnostics.
+pub fn spawn(sdk: &Sdk, cfg: &AvdConfig, log: &Path) -> DwResult<Child> {
     let exe = sdk.emulator();
     if !exe.is_file() {
         return Err(DwError::new(
@@ -139,8 +142,9 @@ pub fn spawn(sdk: &Sdk, cfg: &AvdConfig) -> DwResult<Child> {
     ])
     .stdin(Stdio::null())
     .stdout(Stdio::null())
-    .stderr(Stdio::piped())
+    .stderr(emulator_log(log))
     .kill_on_drop(false);
+    proc::no_console_async(&mut cmd);
 
     let child = cmd.spawn().map_err(|e| {
         DwError::io(
@@ -153,35 +157,61 @@ pub fn spawn(sdk: &Sdk, cfg: &AvdConfig) -> DwResult<Child> {
     Ok(child)
 }
 
+/// Append emulator output to a log file; fall back to discarding it if the file
+/// cannot be opened, because that must not stop the runtime from starting.
+fn emulator_log(path: &Path) -> Stdio {
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map(Stdio::from)
+        .unwrap_or_else(|_| Stdio::null())
+}
+
 /// Terminate an emulator and every process it started. `emulator.exe` launches
 /// qemu as a child, so killing only the launcher leaves a VM holding gigabytes.
 pub fn kill_tree(pid: u32) {
-    let _ = std::process::Command::new("taskkill")
-        .args(["/PID", &pid.to_string(), "/T", "/F"])
+    let mut cmd = std::process::Command::new("taskkill");
+    cmd.args(["/PID", &pid.to_string(), "/T", "/F"])
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
+        .stderr(Stdio::null());
+    proc::no_console(&mut cmd);
+    let _ = cmd.status();
     tracing::info!("terminated emulator process tree at pid {pid}");
 }
 
 /// Wait for a real boot: adb sees the device, and Android reports boot completed.
+/// One `getprop` dump per attempt, not three adb invocations.
 pub async fn wait_boot(adb: &Adb, serial: &str, budget: Duration) -> DwResult<u32> {
     let started = Instant::now();
     let mut attempts = 0u32;
+    let mut last: String;
     loop {
         attempts += 1;
-        if adb.connect_ready(serial).await && adb.boot_completed(serial).await {
-            let api = adb.api_level(serial).await;
-            tracing::info!(
-                "{serial} booted after {:.1}s (api {api:?})",
-                started.elapsed().as_secs_f32()
-            );
-            return api.ok_or_else(|| {
-                DwError::new(
-                    ErrorCode::RuntimeStartFailed,
-                    "The runtime booted but reported no API level.",
+        match adb.readiness(serial).await {
+            Ok(ready) if ready.booted => {
+                tracing::info!(
+                    "{serial} booted after {:.1}s (api {:?})",
+                    started.elapsed().as_secs_f32(),
+                    ready.api
+                );
+                return ready.api.ok_or_else(|| {
+                    DwError::new(
+                        ErrorCode::RuntimeStartFailed,
+                        "The runtime booted but reported no API level.",
+                    )
+                });
+            }
+            Ok(ready) => {
+                last = format!(
+                    "device present, boot_completed not set (api {:?})",
+                    ready.api
                 )
-            });
+            }
+            Err(err) => last = err.summary.clone(),
         }
         if started.elapsed() > budget {
             return Err(DwError::new(
@@ -191,7 +221,7 @@ pub async fn wait_boot(adb: &Adb, serial: &str, budget: Duration) -> DwResult<u3
                     budget.as_secs()
                 ),
             )
-            .detail(format!("{attempts} probes; last state could not be read")));
+            .detail(format!("{attempts} probes; last state: {last}")));
         }
         tokio::time::sleep(Duration::from_millis(1000)).await;
     }

@@ -4,6 +4,7 @@ pub mod apk;
 pub mod commands;
 pub mod diag;
 pub mod domain;
+pub mod proc;
 pub mod runtime;
 pub mod store;
 
@@ -148,6 +149,20 @@ pub fn run() {
             commands::open_logs,
             commands::take_pending_activation,
         ])
-        .run(tauri::generate_context!())
-        .expect("DroidWin failed to start");
+        .build(tauri::generate_context!())
+        .expect("DroidWin failed to start")
+        .run(|app, event| {
+            // Closing the manager must not leave app windows and an emulator
+            // running behind it. Only what this process started is stopped,
+            // and the wait is bounded so closing never appears to hang.
+            if let tauri::RunEvent::Exit = event {
+                if let Some(state) = app.try_state::<commands::AppState>() {
+                    let runtime = std::sync::Arc::clone(&state.runtime);
+                    let _ = tauri::async_runtime::block_on(async move {
+                        tokio::time::timeout(std::time::Duration::from_secs(8), runtime.shutdown())
+                            .await
+                    });
+                }
+            }
+        });
 }

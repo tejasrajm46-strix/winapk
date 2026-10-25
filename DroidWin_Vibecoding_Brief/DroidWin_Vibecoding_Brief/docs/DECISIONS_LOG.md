@@ -99,6 +99,23 @@ Record important decisions in reverse chronological order. Do not erase rejected
 - Context: The supplied test package targets API 17. Android 16 refused it (`INSTALL_FAILED_DEPRECATED_SDK_VERSION`); with the flag it installs and its process starts on a new display, but scrcpy shows a black window for it while the mirrored main display shows the app working.
 - Consequences: The audit's limitation list says old packages may render blank on a virtual display; a rendering probe or mirror fallback is the next fix.
 
+## D-012 — Child processes never allocate a console
+- Status: Accepted, verified on this machine
+- Date: 2026-10-25
+- Decision: Every subprocess DroidWin starts is created with `CREATE_NO_WINDOW` through one module (`src-tauri/src/proc.rs`). No call site constructs a process without it.
+- Context: DroidWin is a GUI-subsystem program. A console child spawned without the flag makes Windows allocate a console, which on this machine appears as a Windows Terminal tab/window per command — reported as "many unnecessary things opening".
+- Alternatives: `STARTF_USESHOWWINDOW`/`SW_HIDE` (hides the window but still allocates a console and can leak a brief window); running commands through a shell (worse: no argument safety).
+- Evidence: `docs/STABILITY_PERFORMANCE_AUDIT.md` §3.1 — a GUI-parent probe produced a visible console window with no flags and none with the policy; the policy does not disturb captured output or scrcpy's own window (`proc::tests`).
+- Consequences: diagnostics rely on captured stdout/stderr and `logs/emulator.log`, not on a visible window.
+
+## D-013 — A manager exit stops only the runtime it started
+- Status: Accepted, verified on this machine
+- Date: 2026-10-25
+- Decision: On `RunEvent::Exit`, DroidWin closes its app windows and shuts down its emulator under an 8 s bound. An emulator DroidWin attached to but did not spawn is left running.
+- Context: scrcpy children were created with `kill_on_drop(false)` and nothing ran on exit, so closing the manager left windows and an emulator behind; conversely `shutdown()` used to kill any emulator at the AVD's port, including one the user started.
+- Evidence: proof runs in both directions (`terminated emulator process tree …` versus `leaving it running`), followed by no qemu/emulator/scrcpy/droidwin process and an empty `adb devices`.
+- Consequences: stopping the runtime is explicit per session; the UI shows the boot honestly. A force kill cannot run the handler, so a killed process may leave the emulator for the next launch to reconcile.
+
 ## New decision template
 
 ### D-XXX — Short title

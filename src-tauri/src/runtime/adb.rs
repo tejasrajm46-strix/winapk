@@ -8,6 +8,7 @@ use std::time::Duration;
 use tokio::process::Command;
 
 use crate::domain::{DwError, DwResult, ErrorCode};
+use crate::proc;
 
 #[derive(Debug, Clone)]
 pub struct CmdOutput {
@@ -40,6 +41,29 @@ pub struct Device {
     pub state: String,
 }
 
+/// What `getprop` said about the runtime in one round trip.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Readiness {
+    pub booted: bool,
+    pub api: Option<u32>,
+}
+
+/// `getprop` prints every property as `[name]: [value]`. Reading the whole dump
+/// once replaces the three separate adb calls a status poll used to make.
+pub fn parse_props(text: &str) -> Readiness {
+    fn prop<'a>(text: &'a str, name: &str) -> Option<&'a str> {
+        text.lines().find_map(|line| {
+            let rest = line.trim().strip_prefix('[')?;
+            let (key, rest) = rest.split_once("]: [")?;
+            (key == name).then(|| rest.strip_suffix(']').unwrap_or(rest))
+        })
+    }
+    Readiness {
+        booted: prop(text, "sys.boot_completed") == Some("1"),
+        api: prop(text, "ro.build.version.sdk").and_then(|v| v.trim().parse().ok()),
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct RemotePackage {
     pub package_id: String,
@@ -67,6 +91,8 @@ impl Adb {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
+        // Never allocate a console window for an adb invocation.
+        proc::no_console_async(&mut cmd);
 
         let child = cmd.spawn().map_err(|e| {
             DwError::io(
@@ -128,6 +154,21 @@ impl Adb {
             }
         }
         Ok(devices)
+    }
+
+    /// One adb call answers "is the device there and has Android finished
+    /// booting" — the readiness check every poll and wait loop relies on.
+    pub async fn readiness(&self, serial: &str) -> DwResult<Readiness> {
+        let out = self
+            .shell(serial, &["getprop"], Duration::from_secs(10))
+            .await?;
+        if !out.ok() {
+            return Err(
+                DwError::new(ErrorCode::RuntimeUnavailable, "The runtime did not answer.")
+                    .detail(out.combined()),
+            );
+        }
+        Ok(parse_props(&out.stdout))
     }
 
     pub async fn connect_ready(&self, serial: &str) -> bool {
@@ -345,6 +386,37 @@ pub fn uninstall_args(serial: &str, package_id: &str, keep_data: bool) -> Vec<St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn one_prop_dump_reports_a_booted_device_and_its_api() {
+        let dump = "[ro.build.version.sdk]: [36]\n[sys.boot_completed]: [1]\n[ro.product.model]: [sdk_gphone64_x86_64]\n";
+        assert_eq!(
+            parse_props(dump),
+            Readiness {
+                booted: true,
+                api: Some(36)
+            }
+        );
+    }
+
+    #[test]
+    fn a_booting_device_is_present_but_not_ready() {
+        let dump = "[ro.build.version.sdk]: [36]\n[sys.boot_completed]: [0]\n";
+        assert_eq!(
+            parse_props(dump),
+            Readiness {
+                booted: false,
+                api: Some(36)
+            }
+        );
+    }
+
+    #[test]
+    fn an_empty_or_unexpected_dump_is_not_ready() {
+        assert!(!parse_props("").booted);
+        assert!(!parse_props("error: device 'emulator-5554' not found").booted);
+        assert_eq!(parse_props("[sys.boot_completed]: [1]").api, None);
+    }
 
     #[tokio::test]
     async fn missing_binary_reports_typed_error() {

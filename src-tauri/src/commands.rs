@@ -131,7 +131,8 @@ pub struct RuntimeControl {
 #[tauri::command]
 pub async fn env_probe(app: AppHandle) -> Result<EnvReport, DwError> {
     let state = app.state::<AppState>();
-    Ok(state.runtime.probe())
+    // An explicit ask, so every check really runs.
+    Ok(state.runtime.probe_now())
 }
 
 #[tauri::command]
@@ -146,7 +147,7 @@ pub async fn runtime_probe(app: AppHandle) -> Result<RuntimeControl, DwError> {
     let status = state.runtime.status(&state.store).await;
     Ok(RuntimeControl {
         status,
-        env: state.runtime.probe(),
+        env: state.runtime.probe_now(),
     })
 }
 

@@ -232,6 +232,30 @@ Statuses: `TODO`, `IN PROGRESS`, `BLOCKED`, `DONE`. Update status only with evid
 - Acceptance: `android:screenOrientation` (or an explicit user choice) selects display geometry; a landscape game renders fully; portrait apps are unchanged.
 - Evidence: `docs/IMPLEMENTATION_AUDIT.md` §3a.
 
+### DW-047 — No console windows for child processes
+- Status: DONE (verified)
+- Goal: no console window or terminal tab appears for adb, avdmanager, taskkill, scrcpy, aapt2 or the emulator's acceleration check.
+- Implementation: `src-tauri/src/proc.rs` applies `CREATE_NO_WINDOW`; every spawn site uses it.
+- Evidence: `docs/STABILITY_PERFORMANCE_AUDIT.md` §3.1 (GUI-parent probe: 1 visible console window without the flag, 0 with it).
+
+### DW-048 — Polling and boot checks must not spawn process storms
+- Status: DONE (verified)
+- Goal: an idle app should not launch a process every couple of seconds; a boot should not launch two or three per second.
+- Implementation: cached environment probe (30 s TTL, `probe_now()` for explicit refresh), one `getprop` dump per readiness check, one adb spawn per boot second, single-flight frontend library refresh.
+- Evidence: `docs/STABILITY_PERFORMANCE_AUDIT.md` §3.2.
+
+### DW-049 — One boot, one window per package
+- Status: DONE (verified)
+- Goal: concurrent start/install/launch must not boot a second emulator or open a duplicate window.
+- Implementation: `boot` and `launch` mutexes in `EmulatorRuntime`, fast path returning an existing window.
+- Evidence: `docs/STABILITY_PERFORMANCE_AUDIT.md` §4.
+
+### DW-050 — Closing the manager owns its runtime
+- Status: DONE (verified)
+- Goal: exiting DroidWin closes its app windows and stops only the emulator it started.
+- Implementation: `RunEvent::Exit` runs a bounded `shutdown()`; `shutdown()` returns early when this process did not spawn the emulator; emulator stderr goes to `logs/emulator.log`.
+- Evidence: `docs/STABILITY_PERFORMANCE_AUDIT.md` §4 (both ownership directions observed; no leftover processes).
+
 ## Task execution template
 
 For each new task record:
