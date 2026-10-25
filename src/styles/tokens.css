@@ -1,0 +1,74 @@
+/* Kyoto Zen tokens, taken from the supplied kyoto_zen/DESIGN.md.
+ *
+ * Rules that are load-bearing, not decorative:
+ *  - radii are 0 everywhere (architectural joinery, no rounded cards);
+ *  - depth comes from tonal surfaces and hairlines, never drop shadows;
+ *  - vermilion is reserved for the primary action and the active navigation item;
+ *  - labels are uppercase and tracked, headings are editorial serif.
+ */
+
+:root {
+  /* Surfaces: void → raised. */
+  --void: #05070a;
+  --surface-lowest: #030406;
+  --surface-low: #0b0d10;
+  --surface: #111417;
+  --surface-container: #1d2023;
+  --surface-high: #282a2e;
+  --surface-highest: #323539;
+
+  /* Text. --text-muted is only for non-essential metadata and passes 4.5:1 on
+     --surface; anything smaller and dimmer is not used for real information. */
+  --on-surface: #e1e2e7;
+  --on-surface-variant: #e7bdb7;
+  --text-secondary: #aeb5b2;
+  --text-muted: #8b928f;
+
+  /* Lines. */
+  --outline: #ad8883;
+  --outline-variant: #5d3f3b;
+  --hairline: rgba(115, 130, 118, 0.18);
+  --hairline-strong: rgba(115, 130, 118, 0.34);
+
+  /* Pigments. */
+  --vermilion: #e0231c;
+  --vermilion-tint: #ffb4a9;
+  --on-vermilion: #fff9f8;
+  --vermilion-deep: #690002;
+  --sage: #bbcbbd;
+  --sage-muted: #738276;
+  --error: #ffb4ab;
+  --error-container: #93000a;
+  --warning: #e8c08a;
+  --success: #a8c9ae;
+
+  /* Type. */
+  --font-display: "Instrument Serif", "Iowan Old Style", Georgia, "Times New Roman", serif;
+  --font-ui: "Onest", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+
+  --text-headline-xl: 500 56px/64px var(--font-display);
+  --text-headline-lg: 500 40px/48px var(--font-display);
+  --text-headline-md: 500 32px/38px var(--font-display);
+  --text-headline-sm: 500 24px/30px var(--font-display);
+  --text-body-lg: 300 18px/28px var(--font-ui);
+  --text-body-md: 300 15px/24px var(--font-ui);
+  --text-body-sm: 400 13px/20px var(--font-ui);
+  --text-label-md: 500 12px/16px var(--font-ui);
+  --text-label-sm: 500 10px/14px var(--font-ui);
+
+  /* Spacing rhythm. */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --gutter: 24px;
+
+  /* Chrome. */
+  --topbar-h: 52px;
+  --nav-w: 224px;
+  --status-h: 32px;
+
+  --focus-ring: 0 0 0 2px var(--void), 0 0 0 3px var(--vermilion-tint);
+  --ease: cubic-bezier(0.2, 0, 0.2, 1);
+}

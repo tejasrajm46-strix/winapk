@@ -1,0 +1,7 @@
+allowBuilds:
+  esbuild: set this to true or false
+# esbuild's platform binary arrives as an optional dependency; running its
+# postinstall is still the supported path, so allow it explicitly.
+onlyBuiltDependencies:
+  - esbuild
+verifyDepsBeforeRun: false
