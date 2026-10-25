@@ -138,7 +138,7 @@ Statuses: `TODO`, `IN PROGRESS`, `BLOCKED`, `DONE`. Update status only with evid
   - Contract tests added.
 
 ### DW-024 — Implement install/update/uninstall
-- Status: PARTIAL (install/update/uninstall proven; in-UI data deletion not exposed)
+- Status: DONE (keep-data and delete-data paths exposed; keep-data verified live with `cmd package uninstall -k`; update with a second version still unexercised)
 - Acceptance:
   - Install and update work with test APKs.
   - Invalid update signatures are not bypassed.
@@ -155,7 +155,7 @@ Statuses: `TODO`, `IN PROGRESS`, `BLOCKED`, `DONE`. Update status only with evid
 ## EPIC 3 — Windows integration
 
 ### DW-030 — Implement APK file activation
-- Status: TODO
+- Status: PARTIAL (association compiled into the NSIS installer; cold start from argv and single-instance forwarding verified from the release binary; installer not run, so the registry write and Explorer double-click are unverified)
 - Acceptance:
   - File association registered by installer using supported mechanisms.
   - Double-click passes path correctly.
@@ -181,14 +181,14 @@ Statuses: `TODO`, `IN PROGRESS`, `BLOCKED`, `DONE`. Update status only with evid
 ## EPIC 4 — Quality, release, and documentation
 
 ### DW-040 — Add failure and recovery coverage
-- Status: PARTIAL
+- Status: PARTIAL (missing SDK, corrupt/empty/non-zip APK, refused old target SDK, timeout, keep-data uninstall and launch-timeout paths are covered; disk exhaustion and interrupted install are not)
 - Acceptance:
   - Runtime missing/crashed, insufficient disk, invalid APK, interrupted install, failed launch, and timeout tested.
   - No permanent loading states.
   - Recovery path is clear.
 
 ### DW-041 — UI and accessibility QA
-- Status: PARTIAL (DOM/a11y checks done; DPI and visual QA pending)
+- Status: PARTIAL (DOM/a11y checks plus native captures at 1280x820; DPI 125/150% and minimum-size matrix pending)
 - Acceptance:
   - Visual review against supplied screenshots.
   - No clipped/overlapping controls.
@@ -196,7 +196,7 @@ Statuses: `TODO`, `IN PROGRESS`, `BLOCKED`, `DONE`. Update status only with evid
   - DPI and resizing checked.
 
 ### DW-042 — Packaging and update workflow
-- Status: TODO
+- Status: PARTIAL (NSIS installer builds at 11.63 MiB with the `.apk` association and bundled scrcpy; not installed, unsigned, no update flow)
 - Acceptance:
   - Clean install/uninstall tested.
   - User data preserved on upgrade.
@@ -204,18 +204,25 @@ Statuses: `TODO`, `IN PROGRESS`, `BLOCKED`, `DONE`. Update status only with evid
   - Runtime licensing and redistribution reviewed.
 
 ### DW-043 — Compatibility test matrix
-- Status: TODO
+- Status: PARTIAL (F-Droid, NewPipe and one API-17 package tested; the API-17 package renders blank on a virtual display and works mirrored)
 - Acceptance:
   - Windows version, host architecture, backend version, Android API/ABI, test APK, result, and known limitations recorded.
   - Public claims do not exceed test evidence.
 
 ### DW-044 — Release readiness review
-- Status: TODO
+- Status: PARTIAL (build, tests and clippy pass; installer unsigned; transitive licence inventory outstanding)
 - Acceptance:
   - Build/tests pass or failures are documented.
   - No fake telemetry or demo data in release.
   - Security and licensing reviewed.
   - Known limitations published.
+
+### DW-045 — Detect a blank virtual display at launch
+- Status: TODO
+- Goal: do not report a window as successfully opened when its Android display renders nothing.
+- Context: the supplied API-17 package starts on display 3 with a focused activity and surface, yet scrcpy shows black; mirroring display 0 renders the same app.
+- Acceptance: launch either proves pixels were produced, or reports "opened, Android started the app, but the display rendered blank" and offers the mirror fallback.
+- Evidence: see `docs/IMPLEMENTATION_AUDIT.md` §3 FR-06 and `docs/DECISIONS_LOG.md` D-011.
 
 ## Task execution template
 

@@ -101,7 +101,11 @@ async fn main() {
 }
 
 async fn run() -> Result<(), String> {
-    let home = PathBuf::from(".droidwin").join("home");
+    // A single-package run can use its own home so it never rewrites the
+    // two-window verification recorded by the full run.
+    let home = std::env::var("DROIDWIN_PROOF_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(".droidwin").join("home"));
     std::fs::create_dir_all(&home).map_err(|e| e.to_string())?;
     let _guard = droidwin_lib::diag::init(&home.join("logs"));
 
@@ -196,6 +200,7 @@ async fn run() -> Result<(), String> {
         return Ok(());
     }
 
+    let allow_old_target = std::env::args().any(|arg| arg == "--allow-old-target");
     let mut installed: Vec<(String, String)> = Vec::new();
     for (index, file) in apks.iter().enumerate() {
         println!("\n[2.{}] Inspecting {}", index + 1, file.display());
@@ -236,7 +241,10 @@ async fn run() -> Result<(), String> {
         ));
 
         let install_started = Instant::now();
-        match runtime.install(&inspection, &store, "proof").await {
+        match runtime
+            .install(&inspection, &store, "proof", allow_old_target)
+            .await
+        {
             Ok(outcome) => {
                 let ms = install_started.elapsed().as_millis();
                 println!("    installed in {ms} ms ({})", outcome.message);
@@ -413,7 +421,8 @@ async fn run() -> Result<(), String> {
         let _ = store.set_setting("runtime.independent_windows_verified", "1");
         println!("\n  recorded verified independent windows for this backend");
     } else {
-        let _ = store.set_setting("runtime.independent_windows_verified", "0");
+        // A failed run does not prove the capability absent; it only fails to
+        // prove it, so a previous verified result is left untouched.
         report.notes.push(
             "Gate B not satisfied: per-app windows could not be proven here. Do not claim independent windows in the product."
                 .to_string(),

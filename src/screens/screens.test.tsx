@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
 
 import { Applications } from "./Applications";
 import { Installer } from "./Installer";
@@ -9,6 +9,7 @@ import { Activity } from "./Activity";
 import {
   appWithoutLabel,
   envMissing,
+  inspectionOldTarget,
   inspectionPartial,
   props,
   statusNotConfigured,
@@ -133,5 +134,37 @@ describe("Activity", () => {
   it("shows an empty state rather than a placeholder history", () => {
     render(<Activity {...props({ activity: [] })} />);
     expect(screen.getByText(/Nothing recorded yet/)).toBeTruthy();
+  });
+});
+
+describe("Installer and old target SDKs", () => {
+  it("offers the Android testing flag only when the manifest asks for a refused SDK", () => {
+    render(<Installer {...props({ inspection: inspectionOldTarget })} />);
+    expect(screen.getByText(/Install anyway/)).toBeTruthy();
+    expect(screen.getAllByText(/API 17/).length).toBeGreaterThan(1);
+  });
+
+  it("passes the explicit choice through instead of applying it silently", () => {
+    const onInstall = vi.fn();
+    render(
+      <Installer
+        {...props({ inspection: inspectionOldTarget, onInstall })}
+      />,
+    );
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: /Install only/i }));
+    expect(onInstall).toHaveBeenCalledWith(false, true);
+  });
+
+  it("keeps the flag off by default and hides it for modern packages", () => {
+    const onInstall = vi.fn();
+    render(
+      <Installer
+        {...props({ inspection: { ...inspectionOldTarget, target_sdk: 36 }, onInstall })}
+      />,
+    );
+    expect(screen.queryByText(/Install anyway/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Install only/i }));
+    expect(onInstall).toHaveBeenCalledWith(false, false);
   });
 });

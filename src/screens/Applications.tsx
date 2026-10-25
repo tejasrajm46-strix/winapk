@@ -1,11 +1,22 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { InstalledApp } from "../backend";
 import { IconInstall, IconRefresh, IconSearch } from "../components/icons";
 import { Button, EmptyState, ErrorNote, Panel, StatusPill } from "../components/ui";
+import { UninstallDialog } from "../components/UninstallDialog";
 import { AppRow, PageHead, type ScreenProps } from "./common";
 
 export function Applications(props: ScreenProps) {
   const { apps, appsError, busy, status } = props;
   const [query, setQuery] = useState("");
+  const [pending, setPending] = useState<InstalledApp | null>(null);
+
+  // If the package leaves the runtime while the dialog is open (another window,
+  // or a refresh), the question no longer applies.
+  useEffect(() => {
+    const target = pending;
+    if (!target || !apps) return;
+    if (!apps.some((app) => app.package_id === target.package_id)) setPending(null);
+  }, [apps, pending]);
 
   const filtered = useMemo(() => {
     if (!apps) return [];
@@ -110,6 +121,7 @@ export function Applications(props: ScreenProps) {
                 onLaunch={props.onLaunch}
                 onStopApp={props.onStopApp}
                 onUninstall={props.onUninstall}
+                onRequestUninstall={setPending}
               />
             ))}
           </ul>
@@ -119,14 +131,27 @@ export function Applications(props: ScreenProps) {
       <div className="note note--info">
         <div className="note__head">
           <IconInstall size={14} />
-          <span>Uninstall keeps app data unless you choose otherwise</span>
+          <span>Uninstalling asks before touching app data</span>
         </div>
         <p className="note__body">
-          The trash control uninstalls the package and keeps its app data, so reinstalling restores
-          your state. Deleting that data is a separate choice; it is not exposed in this build, so
-          nothing here can destroy app data by accident.
+          Android keeps an app&apos;s data after the package is removed, so reinstalling restores it.
+          Deleting that data is a separate choice and is never made for you.
         </p>
       </div>
+
+      {pending && (
+        <UninstallDialog
+          app={pending}
+          busy={busy}
+          onCancel={() => setPending(null)}
+          onConfirm={(deleteData) => {
+            const target = pending;
+            if (!target) return;
+            setPending(null);
+            props.onUninstall(target.package_id, deleteData);
+          }}
+        />
+      )}
     </div>
   );
 }

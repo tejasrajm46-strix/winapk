@@ -36,6 +36,10 @@ The reference includes example WSA labels, sample apps, synthetic metrics, and e
 - SDK: `%LOCALAPPDATA%\Android\Sdk` with platform-tools, emulator, `system-images;android-36;google_apis;x86_64`.
 - scrcpy 5.0.1 (Apache-2.0) bundled into the app data directory; `--new-display` + `--start-app` work against the emulator.
 - Gate A and Gate B pass: two FOSS APKs installed and launched into two distinct HWNDs, moved/resized, one closed independently, both still installed after a manager restart.
+- `.apk` activation works: cold start from argv queues the path, a second launch forwards to the running window (verified from the release binary and its log).
+- Keeping app data was verified with `cmd package uninstall -k` (data still listed by `pm list packages -u`).
+- The emulator must boot with `-no-snapshot`: quickboot was reverting installs between runs (D-008).
+- A 2012-era API-17 app installs with the adb low-target flag and starts on a virtual display, but scrcpy renders that display black while the mirrored device shows the app working. Rendering is not assumed (D-011).
 - Cold boot of `DroidWin_API36` takes roughly 25–45 s; a warm run reuses the running device.
 - Stopping the runtime requires stopping the emulator's qemu child process, not just the launcher (fixed with `adb emu kill` plus a process-tree kill).
 
@@ -45,7 +49,7 @@ The reference includes example WSA labels, sample apps, synthetic metrics, and e
 - `src-tauri/src/apk/` — archive guards and a binary AndroidManifest (AXML) reader.
 - `src-tauri/src/runtime/` — SDK locator, adb wrapper, headless emulator, scrcpy windows.
 - `src-tauri/src/store/` — SQLite schema and migrations.
-- `src-tauri/src/bin/proof.rs` — Gate A/B harness; reuses the production modules.
+- `src-tauri/examples/proof.rs` — Gate A/B harness (`cargo run --example proof`); reuses the production modules and is not bundled in the app.
 - Build/verify commands are listed in the repository `README.md`.
 
 ## Core requirements
@@ -74,7 +78,8 @@ The reference includes example WSA labels, sample apps, synthetic metrics, and e
 - Product and architecture documents drafted, then updated with D-003…D-006.
 - Runtime feasibility resolved and proven on this machine (see `docs/RUNTIME_PROOF.md`).
 - Implemented and verified: workspace/git, Rust core (domain, AXML inspector, SQLite store, diagnostics), emulator+scrcpy adapter, proof harness, Tauri shell, and the Overview / Installer / Applications / Runtime / Activity / Settings screens on real backend state.
-- Not built yet: `.apk` file association, in-UI app-data deletion, automatic SDK provisioning, audio, clipboard/file-drop verification, packaging, compatibility matrix.
+- Built since the first pass: `.apk` association (packaged; cold start and forwarding verified), keep/delete app-data choice, NSIS installer with a bundled scrcpy window host, old-target-SDK opt-in, durable installs across runtime restarts, status polling.
+- Not built yet: automatic SDK provisioning, audio, clipboard/file-drop verification, blank-virtual-display detection, DPI matrix, clean-machine installer test, compatibility matrix, code signing.
 
 ## Update protocol
 When new durable facts or decisions are established:

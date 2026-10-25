@@ -33,6 +33,17 @@
     "active": true,
     "targets": ["nsis"],
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/icon.ico"],
+    "resources": ["resources/scrcpy/**/*"],
+    "fileAssociations": [
+      {
+        "ext": ["apk"],
+        "name": "Android package",
+        "description": "Android application package",
+        "mimeType": "application/vnd.android.package-archive",
+        "role": "Editor",
+        "rank": "Default"
+      }
+    ],
     "shortDescription": "Run Android apps in their own Windows windows",
     "longDescription": "DroidWin inspects Android packages, installs them into an Android runtime you provide, and opens each app in its own desktop window."
   }

@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
@@ -24,6 +24,27 @@ pub struct AppState {
     pub data_dir: PathBuf,
     /// Keeps the non-blocking log writer alive for the process lifetime.
     pub log_guard: Option<tracing_appender::non_blocking::WorkerGuard>,
+    /// Packages requested by the shell before the webview was listening.
+    pub pending_activation: Mutex<Vec<String>>,
+}
+
+/// Package paths in a process argument list. Explorer hands Windows one argument
+/// per file — spaces, Unicode and all — so the only cleanup needed is a quote
+/// pair that survived a hand-typed command line.
+pub fn apk_paths_from_args<I, S>(args: I) -> Vec<String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    args.into_iter()
+        .filter_map(|arg| {
+            let path = arg.as_ref().trim().trim_matches('"');
+            (path.len() > 4
+                && path.to_ascii_lowercase().ends_with(".apk")
+                && !path.starts_with('-'))
+            .then(|| path.to_string())
+        })
+        .collect()
 }
 
 /// Bridges runtime notifications into webview events.
@@ -167,6 +188,7 @@ pub async fn install_apk(
     app: AppHandle,
     path: String,
     launch: bool,
+    allow_old_target: Option<bool>,
 ) -> Result<InstallOutcome, DwError> {
     let state = app.state::<AppState>();
     let store = Arc::clone(&state.store);
@@ -232,7 +254,10 @@ pub async fn install_apk(
         "Checking the runtime.",
         Some(inspection.package_id.clone()),
     );
-    let outcome = match runtime.install(&inspection, &store, &op).await {
+    let outcome = match runtime
+        .install(&inspection, &store, &op, allow_old_target.unwrap_or(false))
+        .await
+    {
         Ok(outcome) => outcome,
         Err(err) => return Err(fail(&app, &store, &op, "install", started, err)),
     };
@@ -337,7 +362,7 @@ pub async fn uninstall_app(
     app: AppHandle,
     package_id: String,
     delete_data: bool,
-) -> Result<(), DwError> {
+) -> Result<String, DwError> {
     let state = app.state::<AppState>();
     let started = now_ms();
     let op = op_id();
@@ -346,7 +371,9 @@ pub async fn uninstall_app(
         .uninstall(&package_id, delete_data, &state.store)
         .await
     {
-        Ok(()) => {
+        // The runtime's sentence is recorded verbatim: it says what Android
+        // reported about retained data, not what we hoped happened.
+        Ok(message) => {
             record(
                 &state.store,
                 OperationRecord::finished(
@@ -354,19 +381,33 @@ pub async fn uninstall_app(
                     "uninstall",
                     "completed",
                     started,
-                    if delete_data {
-                        "Uninstalled and deleted app data"
-                    } else {
-                        "Uninstalled, app data kept"
-                    },
+                    &message,
                     Some(package_id),
                     None,
                 ),
             );
-            Ok(())
+            Ok(message)
         }
         Err(err) => Err(fail(&app, &state.store, &op, "uninstall", started, err)),
     }
+}
+
+/// Paths an earlier launch queued (cold start or second instance). The webview
+/// asks once it is ready, so nothing is emitted before it can listen.
+#[tauri::command]
+pub async fn take_pending_activation(app: AppHandle) -> Result<Vec<String>, DwError> {
+    let state = app.state::<AppState>();
+    let mut queued = state.pending_activation.lock().map_err(|_| {
+        DwError::new(
+            ErrorCode::BackendFailure,
+            "The activation queue is unavailable.",
+        )
+    })?;
+    let paths = std::mem::take(&mut *queued);
+    if !paths.is_empty() {
+        tracing::info!("activation: {} package path(s) queued", paths.len());
+    }
+    Ok(paths)
 }
 
 #[tauri::command]
@@ -412,5 +453,51 @@ fn human_size(bytes: u64) -> String {
         format!("{:.1} MB", bytes as f64 / MB)
     } else {
         format!("{} KB", (bytes as f64 / 1024.0).round() as u64)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::apk_paths_from_args;
+
+    #[test]
+    fn finds_one_package_among_shell_arguments() {
+        let args = [
+            "DroidWin.exe",
+            "--flag",
+            "C:\\Users\\tejas\\Downloads\\FDroid.apk",
+            "notes.txt",
+        ];
+        assert_eq!(
+            apk_paths_from_args(args),
+            vec!["C:\\Users\\tejas\\Downloads\\FDroid.apk".to_string()]
+        );
+    }
+
+    #[test]
+    fn keeps_spaces_and_unicode_in_the_path() {
+        let args = ["C:\\Users\\tejas\\Downloads\\音楽 アプリ.apk"];
+        assert_eq!(apk_paths_from_args(args), args);
+    }
+
+    #[test]
+    fn strips_a_surviving_quote_pair_without_splitting_the_path() {
+        let args = ["\"C:\\My Downloads\\F Droid.apk\""];
+        assert_eq!(
+            apk_paths_from_args(args),
+            vec!["C:\\My Downloads\\F Droid.apk".to_string()]
+        );
+    }
+
+    #[test]
+    fn extension_match_is_case_insensitive_and_ignores_flags() {
+        let args = ["app.APK", "--apk", ".apk"];
+        assert_eq!(apk_paths_from_args(args), vec!["app.APK".to_string()]);
+    }
+
+    #[test]
+    fn keeps_every_package_when_several_are_requested() {
+        let args = ["a.apk", "b.apk"];
+        assert_eq!(apk_paths_from_args(args).len(), 2);
     }
 }

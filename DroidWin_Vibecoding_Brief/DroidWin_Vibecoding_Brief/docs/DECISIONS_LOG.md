@@ -60,6 +60,45 @@ Record important decisions in reverse chronological order. Do not erase rejected
 - Consequences: The experience targets per-app windows, while the implementation stays behind the runtime adapter so a future backend can replace the emulator without touching the UI.
 - Follow-up tasks: file association and a tested compatibility matrix remain open (DW-030, DW-043).
 
+## D-007 — Keeping app data uses the package manager, not `adb uninstall -k`
+- Status: Accepted, verified on this machine
+- Date: 2026-10-25
+- Decision: Uninstall-with-keep-data runs `adb shell cmd package uninstall -k <pkg>`.
+- Context: The audit tested the documented `adb uninstall -k` on Android 16 and it was refused: "The -k option uninstalls the application while retaining the data/cache… execute 'adb shell cmd package uninstall -k'."
+- Evidence: `cmd package uninstall -k org.fdroid.fdroid` → `Success`; the package disappeared from `pm list packages -3` and remained in `pm list packages -u -3`, which is how DroidWin now confirms retention before telling the user data was kept.
+- Consequences: The runtime reports what Android actually said; when retention cannot be read, the message says so instead of asserting it.
+- Follow-up: DW-024.
+
+## D-008 — The emulator boots with `-no-snapshot`, so installs survive a restart
+- Status: Accepted, verified
+- Date: 2026-10-25
+- Decision: Spawn the emulator with `-no-snapshot` (no quickboot load or save).
+- Context: With `-no-snapshot-save` the device still loaded an older quickboot snapshot on start, which silently reverted packages installed after that snapshot. The audit observed F-Droid missing after a restart.
+- Evidence: after `adb emu kill` and a cold boot with `-no-snapshot`, `pm list packages -3` still contained the package installed before the restart.
+- Consequences: Cold boot is slower (≈20–25 s here) but installation state is durable, which the product promises.
+
+## D-009 — `.apk` activation: packaged association, queued cold start, single-instance forwarding
+- Status: Accepted, partially verified
+- Date: 2026-10-25
+- Decision: Declare the `.apk` association in the Tauri bundle; on startup queue package paths from argv and let the webview collect them with `take_pending_activation`; forward later launches through `tauri-plugin-single-instance`.
+- Evidence: release binary started with a package path logged `started with 1 package path(s)` and `activation: 1 package path(s) queued` and showed that package's inspection screen; a second launch exited 0 and the first logged `forwarded 1 package path(s)`. The NSIS script contains `APP_ASSOCIATE "apk" "Android package"`.
+- Remaining: the installer was not run, so the registry write and Explorer double-click are still unverified.
+
+## D-010 — scrcpy ships as a resource; the proof harness does not ship at all
+- Status: Accepted, verified in the built installer
+- Date: 2026-10-25
+- Decision: Bundle the Apache-2.0 scrcpy build under `src-tauri/resources/scrcpy` and copy it into the data directory on first run; move the proof harness from `src/bin` to `examples/`.
+- Context: A clean install had no window host, so every launch would have failed with a message that told the user to reinstall. At the same time the installer contained `proof.exe`.
+- Evidence: generated `installer.nsi` has 34 scrcpy entries and zero `proof.exe` entries; `cargo run --example proof` is the documented harness command.
+- Consequences: Installer is 11.63 MiB and self-contained apart from the user's SDK.
+
+## D-011 — Old-target packages need an explicit opt-in, and virtual-display rendering is not assumed
+- Status: Accepted, partially verified
+- Date: 2026-10-25
+- Decision: Offer `--bypass-low-target-sdk-block` only when the manifest reports `targetSdk < 23`, off by default, labelled with its consequences. Do not treat "process started on the display" as proof that the window renders app content.
+- Context: The supplied test package targets API 17. Android 16 refused it (`INSTALL_FAILED_DEPRECATED_SDK_VERSION`); with the flag it installs and its process starts on a new display, but scrcpy shows a black window for it while the mirrored main display shows the app working.
+- Consequences: The audit's limitation list says old packages may render blank on a virtual display; a rendering probe or mirror fallback is the next fix.
+
 ## New decision template
 
 ### D-XXX — Short title

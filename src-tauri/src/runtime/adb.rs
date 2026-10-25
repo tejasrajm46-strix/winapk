@@ -160,13 +160,22 @@ impl Adb {
         out.stdout.trim().parse().ok()
     }
 
-    pub async fn install(&self, serial: &str, apk: &Path) -> DwResult<CmdOutput> {
-        let apk = apk.to_string_lossy().to_string();
-        self.run(
-            &["-s", serial, "install", "-r", &apk],
-            Duration::from_secs(600),
-        )
-        .await
+    /// `allow_old_target` uses adb's documented testing flag for packages whose
+    /// target SDK Android 14+ refuses. It is never applied silently: the caller
+    /// has to have been told why.
+    pub async fn install(
+        &self,
+        serial: &str,
+        apk: &Path,
+        allow_old_target: bool,
+    ) -> DwResult<CmdOutput> {
+        let path = apk.to_string_lossy().to_string();
+        let mut args = vec!["-s", serial, "install", "-r"];
+        if allow_old_target {
+            args.push("--bypass-low-target-sdk-block");
+        }
+        args.push(path.as_str());
+        self.run(&args, Duration::from_secs(600)).await
     }
 
     pub async fn uninstall(
@@ -175,12 +184,11 @@ impl Adb {
         package_id: &str,
         keep_data: bool,
     ) -> DwResult<CmdOutput> {
-        let mut args = vec!["-s", serial, "uninstall"];
-        if keep_data {
-            args.push("-k");
-        }
-        args.push(package_id);
-        self.run(&args, Duration::from_secs(120)).await
+        // Modern Android refuses `adb uninstall -k` and points at the package
+        // manager command instead, so keeping data takes its own path.
+        let args: Vec<String> = uninstall_args(serial, package_id, keep_data);
+        let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
+        self.run(&borrowed, Duration::from_secs(120)).await
     }
 
     pub async fn package_path(&self, serial: &str, package_id: &str) -> Option<String> {
@@ -230,6 +238,32 @@ impl Adb {
         Ok(packages)
     }
 
+    /// Packages Android still knows about, including ones whose data was kept
+    /// after an uninstall (`pm uninstall -k`). This is how DroidWin checks a
+    /// keep-data claim instead of repeating it.
+    pub async fn packages_including_uninstalled(&self, serial: &str) -> DwResult<Vec<String>> {
+        let out = self
+            .shell(
+                serial,
+                &["pm", "list", "packages", "-u", "-3"],
+                Duration::from_secs(30),
+            )
+            .await?;
+        if !out.ok() {
+            return Err(DwError::new(
+                ErrorCode::RuntimeUnavailable,
+                "The runtime did not return its retained-data list.",
+            )
+            .detail(out.combined()));
+        }
+        Ok(out
+            .stdout
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix("package:"))
+            .map(str::to_string)
+            .collect())
+    }
+
     pub async fn force_stop(&self, serial: &str, package_id: &str) -> DwResult<CmdOutput> {
         self.shell(
             serial,
@@ -276,6 +310,26 @@ impl Adb {
     }
 }
 
+/// Argument list for an uninstall. Split out so the keep-data path is testable
+/// without a device.
+pub fn uninstall_args(serial: &str, package_id: &str, keep_data: bool) -> Vec<String> {
+    let mut args: Vec<String> = if keep_data {
+        vec![
+            "-s".into(),
+            serial.into(),
+            "shell".into(),
+            "cmd".into(),
+            "package".into(),
+            "uninstall".into(),
+            "-k".into(),
+        ]
+    } else {
+        vec!["-s".into(), serial.into(), "uninstall".into()]
+    };
+    args.push(package_id.to_string());
+    args
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -288,6 +342,33 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(err.code, ErrorCode::RuntimeUnavailable);
+    }
+
+    #[test]
+    fn keeping_data_uses_the_package_manager_command() {
+        let args = uninstall_args("emulator-5554", "org.fdroid.fdroid", true);
+        assert_eq!(
+            args,
+            vec![
+                "-s",
+                "emulator-5554",
+                "shell",
+                "cmd",
+                "package",
+                "uninstall",
+                "-k",
+                "org.fdroid.fdroid"
+            ]
+        );
+    }
+
+    #[test]
+    fn deleting_data_uses_a_plain_uninstall() {
+        let args = uninstall_args("emulator-5554", "org.fdroid.fdroid", false);
+        assert_eq!(
+            args,
+            vec!["-s", "emulator-5554", "uninstall", "org.fdroid.fdroid"]
+        );
     }
 
     #[tokio::test]

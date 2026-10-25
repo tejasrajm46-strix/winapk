@@ -129,7 +129,7 @@ pub fn spawn(sdk: &Sdk, cfg: &AvdConfig) -> DwResult<Child> {
         "-no-boot-anim",
         "-gpu",
         "auto",
-        "-no-snapshot-save",
+        "-no-snapshot",
         "-netdelay",
         "none",
         "-netspeed",

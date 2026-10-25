@@ -78,6 +78,27 @@ export function App() {
     }
   }, [refreshActivity, refreshApps]);
 
+  // The first probe can run before adb has reported a booting emulator, which
+  // would leave the status strip stale. Re-read the runtime's own state quietly.
+  useEffect(() => {
+    if (!backend.isDesktop()) return;
+    let last = -1;
+    const timer = window.setInterval(() => {
+      void backend
+        .getRuntimeStatus()
+        .then((next) => {
+          if (!mounted.current) return;
+          setStatus(next);
+          if (next.state === "ready" && last !== 1) void refreshApps();
+          last = next.state === "ready" ? 1 : 0;
+        })
+        .catch(() => {
+          /* keep the last reported state; a failed poll is not a state change */
+        });
+    }, 8000);
+    return () => window.clearInterval(timer);
+  }, [refreshApps]);
+
   useEffect(() => {
     mounted.current = true;
     void refresh();
@@ -101,6 +122,23 @@ export function App() {
         if (apk) void openPath(apk);
       }),
     ];
+
+    // A package opened from Explorer before this webview existed is waiting in
+    // the backend queue; the event listener above only covers later launches.
+    void (async () => {
+      try {
+        const pending = await backend.takePendingActivation();
+        if (!mounted.current || pending.length === 0) return;
+        await openPath(pending[0]);
+        if (mounted.current && pending.length > 1) {
+          setNotice(
+            `${pending.length - 1} other package${pending.length > 2 ? "s were" : " was"} requested; opened the first.`,
+          );
+        }
+      } catch (err) {
+        if (mounted.current) setError(backend.toDwError(err));
+      }
+    })();
 
     return () => {
       mounted.current = false;
@@ -137,7 +175,7 @@ export function App() {
     }
   };
 
-  const install = async (launch: boolean) => {
+  const install = async (launch: boolean, allowOldTarget: boolean) => {
     if (!inspection) return;
     setBusy(true);
     setOpRunning(true);
@@ -145,7 +183,7 @@ export function App() {
     setError(null);
     setNotice(null);
     try {
-      const outcome = await backend.installApk(inspection.path, launch);
+      const outcome = await backend.installApk(inspection.path, launch, allowOldTarget);
       if (!mounted.current) return;
       setNotice(
         `${outcome.message}${outcome.version_name ? ` (v${outcome.version_name})` : ""}. ${
@@ -229,10 +267,8 @@ export function App() {
     setError(null);
     setNotice(null);
     try {
-      await backend.uninstallApp(packageId, deleteData);
-      if (mounted.current) {
-        setNotice(deleteData ? `${packageId} removed with its data.` : `${packageId} uninstalled; its data was kept.`);
-      }
+      const message = await backend.uninstallApp(packageId, deleteData);
+      if (mounted.current) setNotice(message);
       await refreshApps();
       await refreshActivity();
     } catch (err) {
@@ -259,7 +295,7 @@ export function App() {
     onStartRuntime: () => void startRuntime(),
     onStopRuntime: () => void stopRuntime(),
     onBrowse: () => void browse(),
-    onInstall: (launchAfter) => void install(launchAfter),
+    onInstall: (launchAfter, allowOldTarget) => void install(launchAfter, allowOldTarget),
     onLaunch: (packageId) => void launch(packageId),
     onStopApp: (packageId) => void stopApp(packageId),
     onUninstall: (packageId, deleteData) => void uninstall(packageId, deleteData),

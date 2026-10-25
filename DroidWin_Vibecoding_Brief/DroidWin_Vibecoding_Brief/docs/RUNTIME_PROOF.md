@@ -2,8 +2,10 @@
 
 **Date:** 2026-10-25
 **Verdict:** Gate A **PASS**, Gate B **PASS** on the machine below.
-**Harness:** `src-tauri/src/bin/proof.rs` — it calls the same `apk`, `runtime` and `store` modules the
-product uses, so a pass is evidence about the product rather than about a demo.
+**Harness:** `src-tauri/examples/proof.rs` (`cargo run --example proof`) — it calls the same `apk`,
+`runtime` and `store` modules the product uses, so a pass is evidence about the product rather than
+about a demo. The later activation, uninstall-retention and persistence checks are recorded in
+`docs/IMPLEMENTATION_AUDIT.md`.
 
 ## 1. Environment
 

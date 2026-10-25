@@ -29,7 +29,7 @@ export interface ScreenProps {
   onStartRuntime: () => void;
   onStopRuntime: () => void;
   onBrowse: () => void;
-  onInstall: (launch: boolean) => void;
+  onInstall: (launch: boolean, allowOldTarget: boolean) => void;
   onLaunch: (packageId: string) => void;
   onStopApp: (packageId: string) => void;
   onUninstall: (packageId: string, deleteData: boolean) => void;
@@ -65,6 +65,7 @@ export function AppRow({
   onLaunch,
   onStopApp,
   onUninstall,
+  onRequestUninstall,
   compact = false,
 }: {
   app: InstalledApp;
@@ -72,6 +73,8 @@ export function AppRow({
   onLaunch: (packageId: string) => void;
   onStopApp: (packageId: string) => void;
   onUninstall: (packageId: string, deleteData: boolean) => void;
+  /** Opens the keep-or-delete choice. Without it the row uninstalls keeping data. */
+  onRequestUninstall?: (app: InstalledApp) => void;
   compact?: boolean;
 }) {
   const name = app.label;
@@ -112,13 +115,11 @@ export function AppRow({
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => {
-              if (window.confirm(`Uninstall ${name ?? app.package_id}? App data is kept.`)) {
-                onUninstall(app.package_id, false);
-              }
-            }}
+            onClick={() =>
+              onRequestUninstall ? onRequestUninstall(app) : onUninstall(app.package_id, false)
+            }
             disabled={busy}
-            title="Uninstall and keep app data"
+            title="Uninstall — choose whether to keep app data"
             aria-label={`Uninstall ${name ?? app.package_id}`}
           >
             <IconTrash size={13} />

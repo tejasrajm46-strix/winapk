@@ -13,6 +13,9 @@ function humanSize(bytes: number): string {
 export function Installer(props: ScreenProps) {
   const { inspection, stages, opRunning, busy, error } = props;
   const [copied, setCopied] = useState(false);
+  // Only offered when the package's own manifest says it targets a version
+  // Android 14+ refuses; otherwise the flag stays invisible.
+  const [allowOldTarget, setAllowOldTarget] = useState(false);
 
   const copyLog = async () => {
     const text = stages
@@ -145,16 +148,40 @@ export function Installer(props: ScreenProps) {
                   </div>
                 )}
 
+                {inspection.target_sdk !== null && inspection.target_sdk < 23 && (
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={allowOldTarget}
+                      onChange={(event) => setAllowOldTarget(event.target.checked)}
+                      disabled={busy || opRunning}
+                    />
+                    <span className="check__text">
+                      <span className="check__title">Install anyway (Android testing flag)</span>
+                      <span className="check__body">
+                        This package targets Android API {inspection.target_sdk}. Current Android
+                        refuses packages below API 23, so DroidWin has to pass adb&apos;s
+                        low-target-SDK testing flag. Apps this old can also render a black window on
+                        a separate display.
+                      </span>
+                    </span>
+                  </label>
+                )}
+
                 <div className="inline">
                   <Button
                     variant="primary"
-                    onClick={() => props.onInstall(true)}
+                    onClick={() => props.onInstall(true, allowOldTarget)}
                     disabled={busy || opRunning}
                   >
                     <IconPlay size={14} />
                     Install and open
                   </Button>
-                  <Button variant="secondary" onClick={() => props.onInstall(false)} disabled={busy || opRunning}>
+                  <Button
+                    variant="secondary"
+                    onClick={() => props.onInstall(false, allowOldTarget)}
+                    disabled={busy || opRunning}
+                  >
                     Install only
                   </Button>
                 </div>

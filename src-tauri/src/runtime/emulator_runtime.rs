@@ -36,6 +36,29 @@ const WINDOW_HEIGHT: u32 = 900;
 struct WindowEntry {
     child: Arc<tokio::sync::Mutex<Child>>,
     title: String,
+    pid: u32,
+}
+
+/// Android's install failures mean very different things to a user. Keep the
+/// mapping here, next to the command that produces the text, and test it.
+pub fn install_failure_summary(text: &str) -> &'static str {
+    if text.contains("INSTALL_FAILED_UPDATE_INCOMPATIBLE") {
+        "The installed app has a different signature; Android will not let this package replace it."
+    } else if text.contains("INSTALL_FAILED_INSUFFICIENT_STORAGE") {
+        "The runtime has run out of storage for this package."
+    } else if text.contains("INSTALL_FAILED_DEPRECATED_SDK_VERSION") {
+        "This package targets an Android version old enough that the runtime refuses it (target SDK below 23)."
+    } else if text.contains("INSTALL_FAILED_OLDER_SDK") {
+        "This package requires a newer Android version than the runtime provides."
+    } else if text.contains("INSTALL_FAILED_NO_MATCHING_ABIS") {
+        "This package has no native code for this runtime's CPU architecture."
+    } else if text.contains("INSTALL_PARSE_FAILED") {
+        "Android could not parse this package."
+    } else if text.contains("INSTALL_FAILED_ALREADY_EXISTS") {
+        "Android reports a conflicting copy of this package in the runtime."
+    } else {
+        "Android rejected the installation."
+    }
 }
 
 pub struct EmulatorRuntime {
@@ -324,6 +347,7 @@ impl EmulatorRuntime {
         inspection: &ApkInspection,
         store: &Store,
         op: &str,
+        allow_old_target: bool,
     ) -> DwResult<InstallOutcome> {
         self.ensure_ready(store, op).await?;
         let adb = self
@@ -340,23 +364,14 @@ impl EmulatorRuntime {
             format!("Installing {package_id}."),
             Some(package_id.clone()),
         );
-        let output = adb.install(&serial, Path::new(&inspection.path)).await?;
+        let output = adb
+            .install(&serial, Path::new(&inspection.path), allow_old_target)
+            .await?;
         if !output.ok() || !output.stdout.contains("Success") {
             let text = output.combined();
-            let summary = if text.contains("INSTALL_FAILED_UPDATE_INCOMPATIBLE") {
-                "The installed app has a different signature; Android will not let this package replace it."
-            } else if text.contains("INSTALL_FAILED_INSUFFICIENT_STORAGE") {
-                "The runtime has run out of storage for this package."
-            } else if text.contains("INSTALL_FAILED_OLDER_SDK") {
-                "This package requires a newer Android version than the runtime provides."
-            } else if text.contains("INSTALL_FAILED_NO_MATCHING_ABIS") {
-                "This package has no native code for this runtime's CPU architecture."
-            } else if text.contains("INSTALL_PARSE_FAILED") {
-                "Android could not parse this package."
-            } else {
-                "Android rejected the installation."
-            };
-            return Err(DwError::new(ErrorCode::InstallFailed, summary).detail(text));
+            return Err(
+                DwError::new(ErrorCode::InstallFailed, install_failure_summary(&text)).detail(text),
+            );
         }
 
         self.emit(
@@ -466,11 +481,13 @@ impl EmulatorRuntime {
         store: &Store,
         op: &str,
     ) -> DwResult<AppWindow> {
+        // One window per package: launching an app that is already open brings
+        // the existing window's facts back rather than opening a duplicate.
         if let Some(existing) = self.windows.lock().ok().and_then(|w| {
             w.get(package_id).map(|e| AppWindow {
                 package_id: package_id.to_string(),
                 title: e.title.clone(),
-                pid: 0,
+                pid: e.pid,
             })
         }) {
             return Ok(existing);
@@ -526,6 +543,7 @@ impl EmulatorRuntime {
                 WindowEntry {
                     child: Arc::clone(&child),
                     title: title.clone(),
+                    pid,
                 },
             );
         }
@@ -613,12 +631,14 @@ impl EmulatorRuntime {
         }
     }
 
+    /// Returns the sentence to show and record: it reflects what Android
+    /// reported about retained data after the package was removed.
     pub async fn uninstall(
         &self,
         package_id: &str,
         delete_data: bool,
         store: &Store,
-    ) -> DwResult<()> {
+    ) -> DwResult<String> {
         let adb = self
             .adb()
             .ok_or_else(|| DwError::new(ErrorCode::RuntimeUnavailable, "adb is unavailable."))?;
@@ -642,7 +662,27 @@ impl EmulatorRuntime {
             let _ = store.forget_app(package_id);
         }
         self.events.apps_changed();
-        Ok(())
+
+        // `pm uninstall -k` keeps data by contract; `pm list packages -u` is
+        // where that becomes observable, so the message follows the observation.
+        let retained = adb.packages_including_uninstalled(&serial).await;
+        let still_listed = retained
+            .as_ref()
+            .map(|list| list.iter().any(|p| p == package_id))
+            .unwrap_or(false);
+        Ok(if delete_data {
+            if still_listed {
+                format!("{package_id} was uninstalled, but Android still lists data for it.")
+            } else {
+                format!("{package_id} was uninstalled with its data.")
+            }
+        } else if still_listed {
+            format!("{package_id} was uninstalled; Android confirmed its data was kept.")
+        } else if retained.is_ok() {
+            format!("{package_id} was uninstalled; Android lists no retained data for it.")
+        } else {
+            format!("{package_id} was uninstalled; data retention could not be confirmed.")
+        })
     }
 
     pub async fn shutdown(&self) {
@@ -666,5 +706,57 @@ impl EmulatorRuntime {
             let _ = child.start_kill();
             let _ = child.wait().await;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::install_failure_summary;
+
+    #[test]
+    fn signature_conflicts_are_named_as_such() {
+        let text = "Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE: Package org.example signatures do not match]";
+        assert!(install_failure_summary(text).contains("different signature"));
+    }
+
+    #[test]
+    fn missing_abi_is_not_reported_as_a_generic_failure() {
+        assert!(
+            install_failure_summary("INSTALL_FAILED_NO_MATCHING_ABIS: arm64-v8a")
+                .contains("CPU architecture")
+        );
+    }
+
+    #[test]
+    fn new_sdk_requirement_suggests_the_version_mismatch() {
+        assert!(
+            install_failure_summary("INSTALL_FAILED_OLDER_SDK").contains("newer Android version")
+        );
+    }
+
+    #[test]
+    fn storage_exhaustion_is_distinguished_from_a_parse_error() {
+        assert!(
+            install_failure_summary("INSTALL_FAILED_INSUFFICIENT_STORAGE")
+                .contains("out of storage")
+        );
+        assert!(
+            install_failure_summary("INSTALL_PARSE_FAILED_MANIFEST_MALFORMED")
+                .contains("could not parse")
+        );
+    }
+
+    #[test]
+    fn an_old_target_sdk_is_named_instead_of_blamed_on_the_archive() {
+        let summary = install_failure_summary(
+            "Failure [INSTALL_FAILED_DEPRECATED_SDK_VERSION: App package must target at least SDK version 23, but found 17]",
+        );
+        assert!(summary.contains("target SDK below 23"));
+    }
+
+    #[test]
+    fn unknown_failures_stay_generic_instead_of_inventing_a_cause() {
+        let summary = install_failure_summary("something unexpected happened");
+        assert_eq!(summary, "Android rejected the installation.");
     }
 }

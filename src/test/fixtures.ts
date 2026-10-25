@@ -140,6 +140,18 @@ export const activityRow: OperationRecord = {
   detail: null,
 };
 
+export const inspectionOldTarget: ApkInspection = {
+  ...inspectionPartial,
+  path: "C:\Downloads\Expression Evaluator.apk",
+  file_name: "dudeofx.eval_101.apk",
+  package_id: "dudeofx.eval",
+  label: "Expression Evaluator",
+  version_name: "1.1",
+  version_code: 101,
+  min_sdk: 10,
+  target_sdk: 17,
+};
+
 export function props(overrides: Partial<ScreenProps> = {}): ScreenProps {
   return {
     status: statusReady,

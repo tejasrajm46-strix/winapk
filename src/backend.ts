@@ -205,15 +205,15 @@ export const probeRuntime = () => call<RuntimeControl>("runtime_probe");
 export const startRuntime = () => call<RuntimeStatus>("runtime_start");
 export const stopRuntime = () => call<void>("runtime_stop");
 export const inspectApk = (path: string) => call<ApkInspection>("inspect_apk", { path });
-export const installApk = (path: string, launch: boolean) =>
-  call<InstallOutcome>("install_apk", { path, launch });
+export const installApk = (path: string, launch: boolean, allowOldTarget = false) =>
+  call<InstallOutcome>("install_apk", { path, launch, allowOldTarget });
 export const listApps = () => call<InstalledApp[]>("list_apps");
 export const launchApp = (packageId: string) => call<AppWindow>("launch_app", { packageId });
 export const closeAppWindow = (packageId: string) =>
   call<void>("close_app_window", { packageId });
 export const stopApp = (packageId: string) => call<void>("stop_app", { packageId });
 export const uninstallApp = (packageId: string, deleteData: boolean) =>
-  call<void>("uninstall_app", { packageId, deleteData });
+  call<string>("uninstall_app", { packageId, deleteData });
 export const getActivity = (limit = 20) => call<OperationRecord[]>("activity", { limit });
 export const getPaths = () => call<Paths>("paths");
 export const openLogs = () => call<void>("open_logs");
@@ -252,6 +252,12 @@ export function onApkActivation(handler: (path: string) => void): Promise<Unlist
   if (!isDesktop()) return Promise.resolve(() => {});
   return listen<string>("activation://apk", (event) => handler(event.payload));
 }
+
+/**
+ * Packages queued before the webview was ready (cold start from Explorer, or a
+ * forwarding while the window was loading). Ask once on mount.
+ */
+export const takePendingActivation = () => call<string[]>("take_pending_activation");
 
 /** Files dropped onto the window, resolved to absolute paths by the shell. */
 export function onFileDrop(handler: (paths: string[]) => void): Promise<UnlistenFn> {

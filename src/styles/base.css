@@ -907,3 +907,121 @@ a {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* --------------------------------------------------------------- dialog --- */
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-lg);
+  background: rgba(3, 4, 6, 0.74);
+}
+
+.dialog {
+  width: min(540px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--hairline-strong);
+  border-radius: 0;
+  padding: var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  animation: rise 180ms var(--ease) both;
+}
+
+.dialog__eyebrow {
+  display: block;
+  margin-bottom: var(--space-xs);
+  font: var(--text-label-sm);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--sage-muted);
+}
+
+.dialog__title {
+  font: var(--text-headline-sm);
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.dialog__body {
+  color: var(--text-secondary);
+  font: var(--text-body-sm);
+  max-width: 62ch;
+}
+
+.dialog__body strong {
+  color: var(--on-surface);
+  font-weight: 500;
+}
+
+.dialog__package {
+  font-family: "Cascadia Mono", "Cascadia Code", ui-monospace, "Consolas", monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.dialog__danger {
+  border-top: 1px solid var(--hairline);
+  padding-top: var(--space-sm);
+  color: var(--error);
+  font: var(--text-body-sm);
+}
+
+.dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+  border-top: 1px solid var(--hairline);
+  padding-top: var(--space-md);
+}
+
+@media (max-width: 720px) {
+  .dialog__actions {
+    justify-content: stretch;
+  }
+
+  .dialog__actions .btn {
+    flex: 1 1 100%;
+  }
+}
+
+/* A choice that carries a consequence (installing a package Android would
+   otherwise refuse), so it reads as a labelled control, not a form field. */
+.check {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: flex-start;
+  padding: var(--space-md);
+  border: 1px solid var(--hairline-strong);
+  background: var(--surface-container);
+  cursor: pointer;
+}
+
+.check input {
+  margin-top: 3px;
+  accent-color: var(--vermilion);
+}
+
+.check__text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.check__title {
+  font-size: 13px;
+  color: var(--on-surface);
+}
+
+.check__body {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  max-width: 62ch;
+}

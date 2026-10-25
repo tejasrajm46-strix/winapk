@@ -387,3 +387,184 @@ pub fn find_aapt2(build_tools_root: &Path) -> Option<PathBuf> {
     versions.sort();
     versions.pop().map(|p| p.join("aapt2.exe"))
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use super::{inspect, validate};
+    use crate::domain::ErrorCode;
+
+    /// Unique directory per test, removed even when an assertion fails.
+    struct TempDir(PathBuf);
+
+    impl TempDir {
+        fn new(label: &str) -> Self {
+            static NEXT: AtomicU64 = AtomicU64::new(0);
+            let dir = std::env::temp_dir().join(format!(
+                "droidwin-apk-{}-{}-{label}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            std::fs::create_dir_all(&dir).expect("create temp dir");
+            Self(dir)
+        }
+
+        fn file(&self, name: &str) -> PathBuf {
+            self.0.join(name)
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn crc32(data: &[u8]) -> u32 {
+        let mut crc = 0xFFFF_FFFFu32;
+        for &byte in data {
+            crc ^= byte as u32;
+            for _ in 0..8 {
+                let mask = (crc & 1).wrapping_neg();
+                crc = (crc >> 1) ^ (0xEDB8_8320 & mask);
+            }
+        }
+        !crc
+    }
+
+    /// Minimal stored-entry ZIP. Hand-built so the tests do not depend on the
+    /// zip crate's writer surface, and so a deliberately broken archive can be
+    /// produced by writing the same bytes minus the manifest.
+    fn write_zip(path: &std::path::Path, entries: &[(&str, &[u8])]) {
+        let mut out = Vec::new();
+        let mut central = Vec::new();
+        for (name, data) in entries {
+            let offset = out.len() as u32;
+            let crc = crc32(data);
+
+            out.extend_from_slice(&0x0403_4b50u32.to_le_bytes());
+            out.extend_from_slice(&20u16.to_le_bytes());
+            out.extend_from_slice(&0u16.to_le_bytes());
+            out.extend_from_slice(&0u16.to_le_bytes()); // stored
+            out.extend_from_slice(&0u32.to_le_bytes());
+            out.extend_from_slice(&crc.to_le_bytes());
+            out.extend_from_slice(&(data.len() as u32).to_le_bytes());
+            out.extend_from_slice(&(data.len() as u32).to_le_bytes());
+            out.extend_from_slice(&(name.len() as u16).to_le_bytes());
+            out.extend_from_slice(&0u16.to_le_bytes());
+            out.extend_from_slice(name.as_bytes());
+            out.extend_from_slice(data);
+
+            central.extend_from_slice(&0x0201_4b50u32.to_le_bytes());
+            central.extend_from_slice(&20u16.to_le_bytes());
+            central.extend_from_slice(&20u16.to_le_bytes());
+            central.extend_from_slice(&0u16.to_le_bytes());
+            central.extend_from_slice(&0u16.to_le_bytes()); // stored
+            central.extend_from_slice(&0u32.to_le_bytes());
+            central.extend_from_slice(&crc.to_le_bytes());
+            central.extend_from_slice(&(data.len() as u32).to_le_bytes());
+            central.extend_from_slice(&(data.len() as u32).to_le_bytes());
+            central.extend_from_slice(&(name.len() as u16).to_le_bytes());
+            central.extend_from_slice(&0u16.to_le_bytes());
+            central.extend_from_slice(&0u16.to_le_bytes());
+            central.extend_from_slice(&0u16.to_le_bytes());
+            central.extend_from_slice(&0u16.to_le_bytes());
+            central.extend_from_slice(&0u32.to_le_bytes());
+            central.extend_from_slice(&offset.to_le_bytes());
+            central.extend_from_slice(name.as_bytes());
+        }
+
+        let cd_offset = out.len() as u32;
+        let cd_size = central.len() as u32;
+        out.extend_from_slice(&central);
+        out.extend_from_slice(&0x0605_4b50u32.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes());
+        out.extend_from_slice(&(entries.len() as u16).to_le_bytes());
+        out.extend_from_slice(&(entries.len() as u16).to_le_bytes());
+        out.extend_from_slice(&cd_size.to_le_bytes());
+        out.extend_from_slice(&cd_offset.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes());
+        std::fs::write(path, out).expect("write fixture zip");
+    }
+
+    #[test]
+    fn a_missing_path_is_an_invalid_path() {
+        let temp = TempDir::new("missing");
+        let err = validate(&temp.file("absent.apk")).expect_err("absent file must fail");
+        assert_eq!(err.code, ErrorCode::InvalidPath);
+    }
+
+    #[test]
+    fn a_directory_named_like_a_package_is_not_a_package() {
+        let temp = TempDir::new("dir");
+        let dir = temp.file("folder.apk");
+        std::fs::create_dir_all(&dir).expect("create directory fixture");
+        let err = validate(&dir).expect_err("directory must fail");
+        assert_eq!(err.code, ErrorCode::InvalidPath);
+    }
+
+    #[test]
+    fn a_file_with_another_extension_is_refused() {
+        let temp = TempDir::new("ext");
+        let path = temp.file("notes.txt");
+        std::fs::write(&path, b"not a package").expect("write fixture");
+        let err = validate(&path).expect_err("text file must fail");
+        assert_eq!(err.code, ErrorCode::UnsupportedPackage);
+    }
+
+    #[test]
+    fn an_empty_package_is_refused_before_parsing() {
+        let temp = TempDir::new("empty");
+        let path = temp.file("empty.apk");
+        std::fs::write(&path, b"").expect("write fixture");
+        let err = validate(&path).expect_err("empty file must fail");
+        assert_eq!(err.code, ErrorCode::InvalidPackage);
+    }
+
+    #[test]
+    fn bytes_that_are_not_a_zip_are_a_corrupt_archive() {
+        let temp = TempDir::new("garbage");
+        let path = temp.file("garbage.apk");
+        std::fs::write(&path, b"this is plainly not a zip container").expect("write fixture");
+        let err = inspect(&path, None).expect_err("garbage must fail");
+        assert_eq!(err.code, ErrorCode::CorruptArchive);
+    }
+
+    #[test]
+    fn a_zip_without_a_manifest_is_not_an_android_package() {
+        let temp = TempDir::new("nomanifest");
+        let path = temp.file("plain.apk");
+        write_zip(&path, &[("classes.dex", b"dex".as_slice())]);
+        let err = inspect(&path, None).expect_err("zip without manifest must fail");
+        assert_eq!(err.code, ErrorCode::MissingManifest);
+    }
+
+    #[test]
+    fn an_unreadable_manifest_is_rejected_without_guessing() {
+        let temp = TempDir::new("badmanifest");
+        let path = temp.file("bad-manifest.apk");
+        write_zip(
+            &path,
+            &[("AndroidManifest.xml", [0x03u8, 0x00, 0x08, 0x00].as_slice())],
+        );
+        let err = inspect(&path, None).expect_err("garbage manifest must fail");
+        assert_eq!(err.code, ErrorCode::InvalidPackage);
+        assert!(
+            err.detail.is_some(),
+            "the parser reason is kept for diagnosis"
+        );
+    }
+
+    #[test]
+    fn a_unicode_path_with_spaces_is_accepted() {
+        let temp = TempDir::new("unicode");
+        let path = temp.file("音楽 アプリ.apk");
+        write_zip(&path, &[("classes.dex", b"dex".as_slice())]);
+        let size = validate(&path).expect("unicode path must validate");
+        let on_disk = std::fs::metadata(&path).expect("fixture metadata").len();
+        assert_eq!(size, on_disk);
+    }
+}

@@ -4,13 +4,16 @@ version = "0.1.0"
 description = "DroidWin — run Android apps on Windows desktop windows"
 edition = "2021"
 rust-version = "1.80"
+# Two binaries exist (the app and the runtime proof harness), so the app has to
+# be named explicitly for `tauri build` and for a bare `cargo run`.
+default-run = "droidwin"
 
 [lib]
 name = "droidwin_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = "2.6.3"
+tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
 base64 = "0.23.1"
@@ -18,7 +21,7 @@ dirs = "7.0.0"
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
-tauri = "2.11.6"
+tauri = { version = "2.11.6", features = [] }
 tauri-plugin-dialog = "2.7.3"
 tauri-plugin-single-instance = "2.4.5"
 thiserror = "2.0.21"
@@ -29,5 +32,5 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 zip = { version = "4.2.0", default-features = false, features = ["deflate"] }
 
 [[bin]]
-name = "proof"
-path = "src/bin/proof.rs"
+name = "droidwin"
+path = "src/main.rs"
