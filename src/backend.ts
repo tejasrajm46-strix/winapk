@@ -112,6 +112,8 @@ export interface InstalledApp {
   window_title: string | null;
   icon: string | null;
   user_installed: boolean;
+  /** Manifest target SDK from install time; null when DroidWin did not install it. */
+  target_sdk: number | null;
 }
 
 export type Stage =

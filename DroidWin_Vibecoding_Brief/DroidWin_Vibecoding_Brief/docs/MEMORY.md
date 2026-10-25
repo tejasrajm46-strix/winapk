@@ -39,7 +39,9 @@ The reference includes example WSA labels, sample apps, synthetic metrics, and e
 - `.apk` activation works: cold start from argv queues the path, a second launch forwards to the running window (verified from the release binary and its log).
 - Keeping app data was verified with `cmd package uninstall -k` (data still listed by `pm list packages -u`).
 - The emulator must boot with `-no-snapshot`: quickboot was reverting installs between runs (D-008).
-- A 2012-era API-17 app installs with the adb low-target flag and starts on a virtual display, but scrcpy renders that display black while the mirrored device shows the app working. Rendering is not assumed (D-011).
+- A 2012-era API-17 app installs with the adb low-target flag and starts on a virtual display, but scrcpy renders that display black while the mirrored device shows the app working. Rendering is not assumed (D-011). Installed legacy packages are labelled from their manifest (`target_sdk`, schema v2).
+- Block'Buster (target 35, landscape) installs and runs in its own window, but its fixed-width layout is clipped on the default portrait virtual display; per-app display geometry is the open fix (DW-046).
+- Launch success requires the package's own process (`pidof`), not just an open scrcpy window.
 - Cold boot of `DroidWin_API36` takes roughly 25–45 s; a warm run reuses the running device.
 - Stopping the runtime requires stopping the emulator's qemu child process, not just the launcher (fixed with `adb emu kill` plus a process-tree kill).
 

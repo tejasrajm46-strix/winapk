@@ -101,7 +101,7 @@ Requirement IDs follow `docs/PRD.md` (FR-xx) and the MVP gates in `docs/TASKS.md
 | FR-04 Update an installed package | IMPLEMENTED, NOT VERIFIED | Same path with `-r` and a signature-conflict error mapping; not exercised with a second version in this audit. |
 | FR-04 Failure messages name the Android cause | VERIFIED COMPLETE | Mapped codes for signature conflict, storage, newer SDK, missing ABI, parse failure, already exists, and deprecated target SDK, each with a unit test. |
 | FR-04 Install packages targeting an old SDK | VERIFIED COMPLETE | The supplied package targets API 17; Android 16 refused it, and with the explicit "Install anyway" option (adb `--bypass-low-target-sdk-block`) the install returned `Success` and the process started. The flag is only offered when the manifest says `targetSdk < 23`, and is off by default. |
-| FR-05 Library lists installed apps | VERIFIED COMPLETE | Real list after installs; system packages excluded. |
+| FR-05 Library lists installed apps | VERIFIED COMPLETE | Real list after installs; system packages excluded. Manifest target SDK is persisted (schema v2, with a v1→v2 migration test) so legacy packages stay labelled after a restart. |
 | FR-05 Search / empty / error states | VERIFIED COMPLETE | DOM tests; stopped-runtime state offers "Start runtime". |
 | FR-05 Uninstall with a keep-or-delete choice | VERIFIED COMPLETE (keep-data mechanism) | The dialog offers keep/delete with Escape, focus and a test for each. Live check: `cmd package uninstall -k org.fdroid.fdroid` → `Success`; package gone from `pm list packages -3`, still listed by `pm list packages -u -3` (data retained). The runtime now uses that command because `adb uninstall -k` is refused by modern Android — a defect found by this audit and fixed. |
 | FR-05 Delete app data | IMPLEMENTED, NOT VERIFIED | Plain `pm uninstall` path; no live deletion of a package's data was performed. |
@@ -109,7 +109,8 @@ Requirement IDs follow `docs/PRD.md` (FR-xx) and the MVP gates in `docs/TASKS.md
 | FR-06 Independent window per app | VERIFIED COMPLETE | Recorded full run: two distinct HWNDs (`DroidWin — F-Droid`, `DroidWin — NewPipe`), OS geometry read back. |
 | FR-06 Move and resize independently | VERIFIED COMPLETE | `MoveWindow` + `GetWindowRect`: `46,23 291x637 → 120,140 520x760`. |
 | FR-06 Closing one window leaves the other | VERIFIED COMPLETE | Closed F-Droid's window, the second window and the installation survived. |
-| FR-06 Per-app compatibility of virtual displays | PARTIALLY COMPLETE (limitation) | The supplied API-17 app renders **black** on a virtual display while its mirrored main-display window shows the working app (screenshots). DroidWin cannot yet detect a blank virtual display; see §5. |
+| FR-06 Per-app compatibility of virtual displays | PARTIALLY COMPLETE (limitation) | The supplied API-17 app renders **black** on a virtual display while its mirrored main-display window shows the working app (screenshots). DroidWin cannot yet detect a blank virtual display; see §5. It also labels installed legacy packages ("Legacy target · API 17") from the manifest, so the risk is visible before launching. |
+| FR-06 Launch result is not assumed | VERIFIED COMPLETE | `launch_app` now waits up to five seconds for the package's own process (`pidof`) after the window opens; a window with no process is closed and reported as a failure, not a success. |
 | FR-06 Host-side back control | NOT IMPLEMENTED | Stated in the UI limitations: Android's own back key works, no host-side button. |
 | FR-07 Clipboard / file drop / audio | IMPLEMENTED, NOT VERIFIED | Report as "Not verified" in the capability list; not exercised. |
 | FR-08 Persistence across app restart | VERIFIED COMPLETE | Fresh manager read both packages from the runtime. |
@@ -143,32 +144,44 @@ Requirement IDs follow `docs/PRD.md` (FR-xx) and the MVP gates in `docs/TASKS.md
 | Code signing | NOT APPLICABLE (unsigned) | Installer is unsigned; Windows SmartScreen will warn. Reported as a release limitation. |
 | Android SDK/emulator redistribution | VERIFIED COMPLETE (policy) | Not bundled; located from the user's SDK. |
 
+## 3a. Additional package tested: Block'Buster
+
+`org.asafonov.blockbuster` 1.6 (code 12), min SDK 29, target SDK 35, 189 KB. Installed with a plain
+`adb install -r` → `Success`, launched with `--new-display=540x1170/420 --start-app=…`, process
+running (pid 2585), own window `DroidWin — Block'Buster` at 795×397. Its landscape layout is
+**clipped on the right** at that display size; relaunching with a landscape virtual display
+(`1170x540`) produced the same clipping, so the app appears to draw a fixed-width surface. This is a
+per-app display-geometry limitation (portrait display default), not a launch failure.
+
 ## 4. Test suite shape
 
-Rust (42): AXML reader (6), archive guards (8), operation state machine (6), store migrations and
+Rust (44): AXML reader (6), archive guards (8), operation state machine (6), store migrations and
 history (3), adb argument/timeout behaviour (4), scrcpy argument construction (1), SDK discovery (2),
 install-failure mapping (6), `.apk` argument parsing (5), plus supporting tests.
 
-Frontend (22): honest runtime states, disabled start, empty library, unresolved labels, signature
+Frontend (24): honest runtime states, disabled start, empty library, unresolved labels, signature
 wording, stage rendering, running state from the window registry, stopped-runtime recovery, verified
 capability counts, empty activity, uninstall keep/delete/cancel/Escape/package-disappears/compact
-rows, and the old-target-SDK option.
+rows, the old-target-SDK option, and the legacy-target library badge.
 
 Not covered: any test that needs a live emulator is in the `proof` example rather than the test
 suite, so `cargo test` stays hermetic and fast.
 
 ## 5. Remaining work, in priority order
 
-1. **Detect a blank virtual display.** The supplied 2012-era app launches on display 3, is focused,
+1. **Per-app display geometry.** Block'Buster's fixed-width landscape layout is clipped; the launch
+   path always creates a 540×1170 portrait display. Reading `screenOrientation` from the manifest and
+   choosing display geometry (or letting the user pick) would fix the common landscape-game case.
+2. **Detect a blank virtual display.** The supplied 2012-era app launches on display 3, is focused,
    owns a surface — and scrcpy renders black, while the same app mirrored from display 0 works. A
    launch currently counts as successful on process/display facts alone. Needs a rendering probe,
    or a documented "known blank display" warning for `targetSdk < 23`, or a mirror-mode fallback.
-2. **Install and uninstall the built installer** on a disposable machine/profile to verify the
+3. **Install and uninstall the built installer** on a disposable machine/profile to verify the
    `.apk` association, uninstaller cleanup, and first-run scrcpy provisioning.
-3. **DPI matrix** at 100/125/150 % and the minimum window size; one visual pass per screen.
-4. **Clipboard, file drop, audio**: verify or keep reported as unsupported.
-5. **Update flow** with a real second version, including the signature-conflict path.
-6. **Transitive licence inventory** and a signed installer.
+4. **DPI matrix** at 100/125/150 % and the minimum window size; one visual pass per screen.
+5. **Clipboard, file drop, audio**: verify or keep reported as unsupported.
+6. **Update flow** with a real second version, including the signature-conflict path.
+7. **Transitive licence inventory** and a signed installer.
 
 ## 6. Verified limitation statement (product copy)
 

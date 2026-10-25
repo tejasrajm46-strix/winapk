@@ -96,6 +96,18 @@ export const appRunning: InstalledApp = {
   window_title: "DroidWin — F-Droid",
   icon: null,
   user_installed: true,
+  target_sdk: 36,
+};
+
+export const appLegacyTarget: InstalledApp = {
+  ...appRunning,
+  package_id: "dudeofx.eval",
+  label: "Expression Evaluator",
+  version_name: "1.1",
+  version_code: 101,
+  running: false,
+  window_title: null,
+  target_sdk: 17,
 };
 
 export const appWithoutLabel: InstalledApp = {
@@ -107,6 +119,7 @@ export const appWithoutLabel: InstalledApp = {
   window_title: null,
   icon: null,
   user_installed: true,
+  target_sdk: null,
 };
 
 export const inspectionPartial: ApkInspection = {

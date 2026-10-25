@@ -15,6 +15,9 @@ pub struct InstalledApp {
     pub icon: Option<String>,
     /// Third-party (non-system) package as reported by the runtime.
     pub user_installed: bool,
+    /// Target SDK from the manifest at install time. None when DroidWin did not
+    /// install the package and therefore never saw its manifest.
+    pub target_sdk: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

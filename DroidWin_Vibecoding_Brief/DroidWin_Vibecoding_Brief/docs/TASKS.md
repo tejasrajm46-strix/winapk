@@ -218,11 +218,19 @@ Statuses: `TODO`, `IN PROGRESS`, `BLOCKED`, `DONE`. Update status only with evid
   - Known limitations published.
 
 ### DW-045 — Detect a blank virtual display at launch
-- Status: TODO
+- Status: PARTIAL (installed legacy packages are labelled from their manifest and launch now requires the app's own process, but a blank *rendered* display is not detected)
+- Follow-up: per-app display geometry (DW-046).
 - Goal: do not report a window as successfully opened when its Android display renders nothing.
 - Context: the supplied API-17 package starts on display 3 with a focused activity and surface, yet scrcpy shows black; mirroring display 0 renders the same app.
 - Acceptance: launch either proves pixels were produced, or reports "opened, Android started the app, but the display rendered blank" and offers the mirror fallback.
 - Evidence: see `docs/IMPLEMENTATION_AUDIT.md` §3 FR-06 and `docs/DECISIONS_LOG.md` D-011.
+
+### DW-046 — Per-app display geometry
+- Status: TODO
+- Goal: create the virtual display with the orientation and size the app expects instead of always 540×1170 portrait.
+- Context: Block'Buster (target 35, landscape) launches and runs but its fixed-width layout is clipped; a landscape virtual display did not resolve it either.
+- Acceptance: `android:screenOrientation` (or an explicit user choice) selects display geometry; a landscape game renders fully; portrait apps are unchanged.
+- Evidence: `docs/IMPLEMENTATION_AUDIT.md` §3a.
 
 ## Task execution template
 

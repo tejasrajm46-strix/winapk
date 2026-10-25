@@ -401,6 +401,7 @@ impl EmulatorRuntime {
                 version_name: inspection.version_name.clone(),
                 version_code: version_code.or(inspection.version_code),
                 icon: inspection.icon.clone(),
+                target_sdk: inspection.target_sdk,
             },
             now_ms(),
         );
@@ -461,6 +462,7 @@ impl EmulatorRuntime {
                 window_title: open_windows.get(&pkg.package_id).cloned(),
                 icon: cached.and_then(|c| c.icon.clone()),
                 user_installed: true,
+                target_sdk: cached.and_then(|c| c.target_sdk),
                 package_id: pkg.package_id,
             });
         }
@@ -550,9 +552,25 @@ impl EmulatorRuntime {
         self.watch_window(package_id.to_string(), child);
         self.events.apps_changed();
 
-        // If scrcpy cannot start the app, it exits almost immediately; report that
-        // instead of leaving the UI claiming a window opened.
-        tokio::time::sleep(Duration::from_millis(1200)).await;
+        // A window plus a live scrcpy process is not proof that Android started
+        // the app: a blocked background activity launch leaves an empty window.
+        // Watch for the app's own process for up to five seconds.
+        let mut started = false;
+        for _ in 0..10 {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            let open = self
+                .windows
+                .lock()
+                .map(|w| w.contains_key(package_id))
+                .unwrap_or(false);
+            if !open {
+                break;
+            }
+            if adb.process_running(&serial, package_id).await {
+                started = true;
+                break;
+            }
+        }
         let still_open = self
             .windows
             .lock()
@@ -564,6 +582,14 @@ impl EmulatorRuntime {
                 format!("The window for {package_id} closed immediately."),
             )
             .detail("scrcpy could not start this package on a virtual display. This app may not support secondary displays."));
+        }
+        if !started {
+            let _ = self.close_window(package_id).await;
+            return Err(DwError::new(
+                ErrorCode::LaunchFailed,
+                format!("Android did not start {package_id} on its new display."),
+            )
+            .detail("The window host opened, but the package has no process. Android can refuse to start an activity on a secondary display (background-activity-launch rules) or the app may not support one. Try again after the runtime is idle."));
         }
 
         Ok(AppWindow {

@@ -7,6 +7,8 @@ import { Overview } from "./Overview";
 import { RuntimeScreen } from "./Runtime";
 import { Activity } from "./Activity";
 import {
+  appLegacyTarget,
+  appRunning,
   appWithoutLabel,
   envMissing,
   inspectionOldTarget,
@@ -166,5 +168,18 @@ describe("Installer and old target SDKs", () => {
     expect(screen.queryByText(/Install anyway/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /Install only/i }));
     expect(onInstall).toHaveBeenCalledWith(false, false);
+  });
+});
+
+describe("Applications and legacy targets", () => {
+  it("labels a package installed from an old manifest instead of pretending it will render", () => {
+    render(<Applications {...props({ apps: [appLegacyTarget] })} />);
+    expect(screen.getByText(/Legacy target · API 17/)).toBeTruthy();
+    expect(screen.getByTitle(/old apps can render a blank window/i)).toBeTruthy();
+  });
+
+  it("does not label a modern package", () => {
+    render(<Applications {...props({ apps: [appRunning] })} />);
+    expect(screen.queryByText(/Legacy target/)).toBeNull();
   });
 });

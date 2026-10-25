@@ -79,19 +79,33 @@ export function AppRow({
 }) {
   const name = app.label;
   const version = app.version_name ? `v${app.version_name}` : null;
+  const legacy = app.target_sdk !== null && app.target_sdk < 23;
   return (
     <li className="row">
       <div className="row__icon" aria-hidden="true">
         {app.icon ? <img src={app.icon} alt="" /> : <IconPackage size={16} />}
       </div>
       <div className="row__main">
-        <div className="row__title" title={name ?? app.package_id}>
+        <div
+          className="row__title"
+          title={
+            legacy
+              ? `${name ?? app.package_id} — targets API ${app.target_sdk}; old apps can render a blank window on a separate display`
+              : name ?? app.package_id
+          }
+        >
           {name ?? app.package_id}
         </div>
         <div className="row__meta">
           <span className="mono">{app.package_id}</span>
           {version && <span>{version}</span>}
           {!name && <span>name unresolved</span>}
+          {app.target_sdk !== null && app.target_sdk < 23 && (
+            <StatusPill
+              tone="warn"
+              label={`Legacy target · API ${app.target_sdk}`}
+            />
+          )}
           {app.running ? (
             <StatusPill tone="accent" label="Window open" />
           ) : (

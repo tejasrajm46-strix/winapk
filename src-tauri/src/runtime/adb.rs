@@ -264,6 +264,18 @@ impl Adb {
             .collect())
     }
 
+    /// Whether the package currently has a process. Used after opening a window
+    /// so "scrcpy started" is not mistaken for "Android started the app".
+    pub async fn process_running(&self, serial: &str, package_id: &str) -> bool {
+        match self
+            .shell(serial, &["pidof", package_id], Duration::from_secs(10))
+            .await
+        {
+            Ok(out) => !out.stdout.trim().is_empty(),
+            Err(_) => false,
+        }
+    }
+
     pub async fn force_stop(&self, serial: &str, package_id: &str) -> DwResult<CmdOutput> {
         self.shell(
             serial,
