@@ -42,6 +42,13 @@ export const IconApplications = (p: IconProps) => (
   </svg>
 );
 
+export const IconPhone = (p: IconProps) => (
+  <svg {...base(p)}>
+    <rect x="7" y="2" width="10" height="20" />
+    <path d="M10 5h4M11 19h2" />
+  </svg>
+);
+
 export const IconInstall = (p: IconProps) => (
   <svg {...base(p)}>
     <path d="M12 3v11" />
@@ -66,6 +73,15 @@ export const IconActivity = (p: IconProps) => (
   </svg>
 );
 
+export const IconAgent = (p: IconProps) => (
+  <svg {...base(p)}>
+    <rect x="4" y="7" width="16" height="12" />
+    <path d="M12 3v4" />
+    <path d="M9 12v2M15 12v2" />
+    <path d="M2 12v4M22 12v4" />
+  </svg>
+);
+
 export const IconSettings = (p: IconProps) => (
   <svg {...base(p)}>
     <circle cx="12" cy="12" r="3" />
@@ -77,6 +93,21 @@ export const IconSearch = (p: IconProps) => (
   <svg {...base(p)}>
     <circle cx="11" cy="11" r="6" />
     <path d="M16 16l4 4" />
+  </svg>
+);
+
+export const IconGrid = (p: IconProps) => (
+  <svg {...base(p)}>
+    <rect x="3" y="3" width="7" height="7" />
+    <rect x="14" y="3" width="7" height="7" />
+    <rect x="3" y="14" width="7" height="7" />
+    <rect x="14" y="14" width="7" height="7" />
+  </svg>
+);
+
+export const IconList = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M4 6h2M9 6h11M4 12h2M9 12h11M4 18h2M9 18h11" />
   </svg>
 );
 
@@ -128,12 +159,6 @@ export const IconRefresh = (p: IconProps) => (
   </svg>
 );
 
-export const IconChevron = (p: IconProps) => (
-  <svg {...base(p)}>
-    <path d="M9 6l6 6-6 6" />
-  </svg>
-);
-
 export const IconPackage = (p: IconProps) => (
   <svg {...base(p)}>
     <path d="M12 3l9 5v8l-9 5-9-5V8l9-5z" />
@@ -155,8 +180,47 @@ export const IconClock = (p: IconProps) => (
   </svg>
 );
 
-export const IconSpinner = (p: IconProps) => (
-  <svg {...base(p)} className={[p.className, "spin"].filter(Boolean).join(" ")}>
-    <path d="M12 3a9 9 0 1 0 9 9" />
+/** Android navigation: a hardware-style back arrow. */
+export const IconBack = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M19 12H5" />
+    <path d="M10 6l-5 6 5 6" />
+  </svg>
+);
+
+export const IconHome = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M4 10.5 12 4l8 6.5" />
+    <path d="M6 10v10h12V10" />
+  </svg>
+);
+
+/** Recent apps: two stacked cards, the Android overview shape. */
+export const IconRecents = (p: IconProps) => (
+  <svg {...base(p)}>
+    <rect x="4" y="4" width="16" height="10" />
+    <path d="M4 17h16" />
+  </svg>
+);
+
+export const IconCamera = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M3 8h4l2-3h6l2 3h4v11H3z" />
+    <circle cx="12" cy="13" r="3.2" />
+  </svg>
+);
+
+/** A filled dot: the record control, and the indicator while it runs. */
+export const IconRecord = ({ size = 16, ...props }: IconProps) => (
+  <svg {...base({ size, ...props })} fill="currentColor" stroke="none">
+    <circle cx="12" cy="12" r="6" />
+  </svg>
+);
+
+export const IconOpen = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M14 4h6v6" />
+    <path d="M20 4l-8 8" />
+    <path d="M18 14v6H4V6h6" />
   </svg>
 );

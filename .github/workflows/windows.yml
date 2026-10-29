@@ -1,0 +1,63 @@
+name: Windows build
+
+# Builds the installer from source on a clean Windows runner. Nothing here needs
+# an Android SDK: the runtime is downloaded by the app at setup time, so the
+# build has no dependency on any machine's SDK directory.
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Frontend tests
+        run: pnpm test
+
+      - name: Rust unit tests
+        run: cargo test --lib --manifest-path src-tauri/Cargo.toml
+
+      # `beforeBuildCommand` runs `tsc --noEmit` and `vite build`, and the bundle
+      # step produces DroidWin-Setup.exe (NSIS) next to the executable.
+      - name: Build the app and installer
+        run: pnpm tauri build
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: DroidWin-Setup
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+
+      - name: Upload application
+        uses: actions/upload-artifact@v4
+        with:
+          name: DroidWin
+          path: src-tauri/target/release/droidwin.exe
+          if-no-files-found: error

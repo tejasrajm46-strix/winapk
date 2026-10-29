@@ -1,112 +1,190 @@
+<div align="center">
+
 # DroidWin
 
-Run Android apps from APKs in their own Windows desktop windows.
+**Run Android apps and games in their own real Windows windows.**
 
-DroidWin inspects a package, installs it into an Android runtime, and opens **one desktop window
-per app**. It is a manager, not an emulator: the Android runtime is the Android Emulator from the
-Android SDK that **you** install, and each app window is a `scrcpy` window attached to its own
-virtual Android display.
+A Tauri + Rust desktop shell over the Android Emulator, ADB and scrcpy — with an on-window control rail, universal keyboard shortcuts, and click-to-place keyboard mapping.
 
-> **Status: functional with documented limits.** The install → launch → window workflow is proven
-> on this machine, `.apk` activation is wired (cold start and single-instance forwarding verified),
-> uninstall asks whether to keep or delete app data, and a Windows installer builds. Compatibility
-> is not universal, audio is not forwarded, and very old packages can render a blank virtual display.
-> Nothing in the UI shows a state the backend did not report. The evidence and the open items are in
-> [docs/IMPLEMENTATION_AUDIT.md](DroidWin_Vibecoding_Brief/DroidWin_Vibecoding_Brief/docs/IMPLEMENTATION_AUDIT.md).
+[![Windows](https://img.shields.io/badge/platform-Windows%2010%2F11-0a7cff?style=flat-square&logo=windows)](https://www.microsoft.com/windows)
+[![Tauri 2](https://img.shields.io/badge/Tauri-2.x-24c8db?style=flat-square&logo=tauri)](https://tauri.app)
+[![Rust](https://img.shields.io/badge/Rust-1.8x-b7410e?style=flat-square&logo=rust)](https://www.rust-lang.org)
+[![Tests](https://img.shields.io/badge/tests-113%20frontend%20%C2%B7%20256%20rust-2ea043?style=flat-square)](#testing)
+[![License](https://img.shields.io/badge/license-MIT-6b7280?style=flat-square)](#license)
 
-## Why the runtime is what it is
+</div>
 
-- **Windows Subsystem for Android is discontinued** (no Store distribution since 5 March 2025), so it
-  is not a foundation. Community builds of it are unsupported.
-- **Commercial emulators** (BlueStacks, Genymotion, LDPlayer, MEmu, Nox, MuMu) license themselves for
-  personal use; none of them may be embedded in a product like this.
-- **Android Emulator + scrcpy** is the open path that actually delivers per-app windows: scrcpy
-  creates a virtual Android display per window and launches the package onto it.
-- **The Android SDK is development-licensed and must not be redistributed**, so DroidWin locates the
-  SDK you installed and tells you which packages are missing instead of bundling Google's emulator.
+<div align="center">
+  <img src="docs/images/key-mapping.png" alt="Click-to-place key mapping over a running game" width="720">
+  <br>
+  <sub>Click a control on the real game, press a key — the point, the key and the profile are saved per Android package.</sub>
+</div>
 
-## Requirements
+---
 
-| Need | Why |
+## Why it exists
+
+Running an Android game inside a phone emulator window gives you a phone-shaped
+rectangle and a mouse that pretends to be a finger. DroidWin gives every installed
+app its own desktop window and treats that window as the product:
+
+- **One window per app** — each runs on its own virtual display, so four apps can be
+  open at once without sharing a screen.
+- **Controls where the game is** — the rail and the navigation bar are anchored to
+  the window they belong to, and follow it when it moves, resizes or rotates.
+- **Keyboard mapping that starts from the game itself** — not a percentage pad.
+- **Universal shortcuts** that work in every Android app, before any game profile.
+
+## Features
+
+| Area | What you get |
 | --- | --- |
-| Windows 11 x64 | target platform |
-| Visual Studio 2022 Build Tools (C++ workload) | Rust MSVC toolchain |
-| WebView2 runtime | Tauri shell (present on Windows 11 by default) |
-| Rust (stable, MSVC) + Node 24 + pnpm | build the app |
-| Android SDK with `platform-tools`, `emulator`, and an x86_64 system image | the Android runtime |
+| **Library** | Install APKs from the UI, see what is installed, open or stop an app |
+| **App windows** | Per-app virtual display, own title, free resize, portrait & landscape |
+| **Control rail** | Screenshot of that window's display, rotate, More → key mapping |
+| **Navigation** | Back · Home · Recent Apps, always at the bottom of the window |
+| **Universal keys** | `Shift+A/H/R/M` nav, `Shift+P` screenshot, `Shift+O` rotate, all rebindable |
+| **Key mapping** | Click the real control → press a key → saved per package and reloaded |
+| **Overlay** | Labels on the game, `Ctrl+Shift+R` hides everything without losing the profile |
+| **Performance** | vCPU / RAM / GPU plan with requested-vs-applied reporting and restart notice |
+| **Agent control** | MCP endpoint (JSON-RPC over loopback) and a `droidwin` CLI over the same runtime |
+| **Cleanup** | Closing DroidWin releases held keys, closes its windows and stops the emulator it started |
 
-Install the runtime pieces once:
+## Screenshots
 
-```bat
-set SDK=%LOCALAPPDATA%\Android\Sdk
-"%SDK%\cmdline-tools\latest\bin\sdkmanager.bat" --sdk_root="%SDK%" "platform-tools" "emulator" "system-images;android-36;google_apis;x86_64"
+| Window controls | Universal keys |
+| --- | --- |
+| ![](docs/images/window-controls.png) | ![](docs/images/universal-keys.png) |
+
+## Quick start
+
+```powershell
+# 1. Run the built app (no toolchain needed)
+.\release\DroidWin\DroidWin.exe
+
+# 2. or install it
+.\release\DroidWin\Setup.exe
 ```
 
-DroidWin creates its own AVD (`DroidWin_API36`) headless on first run; you never touch the emulator
-by hand.
+First launch sets up its Android runtime (SDK, system image, AVD) from Google's
+distribution, then reuses it. Nothing else has to be installed beforehand.
 
-## Run it
+### From source
 
-```bash
+```powershell
 pnpm install
-cargo build --manifest-path src-tauri/Cargo.toml
-pnpm tauri dev
+pnpm dev            # frontend only
+pnpm tauri dev      # full app
+pnpm tauri build    # release EXE + NSIS installer
 ```
 
-`DROIDWIN_HOME` overrides where DroidWin keeps its database, logs and bundled window host — useful
-so a development run stays inside the checkout:
+Requirements: Node 20+, pnpm, Rust (MSVC toolchain), WebView2, and a Windows
+machine with virtualization enabled for the emulator.
 
-```bash
-DROIDWIN_HOME="$PWD/.droidwin/home" ./src-tauri/target/debug/droidwin.exe
+## Keyboard
+
+**Universal — the same in every Android app** (editable in *Key mapping*):
+
+| Action | Default | Action | Default |
+| --- | --- | --- | --- |
+| Back | `Shift+A` | Menu | `Shift+M` |
+| Home | `Shift+H` | Screenshot | `Shift+P` |
+| Recent Apps | `Shift+R` | Rotate | `Shift+O` |
+| Show / hide mapping | `Ctrl+Shift+R` | | |
+
+Universal chords are decided **before** any per-app profile, so a game cannot
+swallow Android's own navigation. A chord needs a modifier, so plain typing is
+never captured, and a chord already used by another action or app mapping is
+refused with a reason instead of being silently shadowed.
+
+**Per-app mapping:** *More → Key mapping → Place on the game*, click the control,
+press the key, **Add**. The point is stored as a percentage of the Android
+display, so resizing, moving or rotating the window keeps it on the same control.
+
+## Architecture
+
+```text
+┌──────────────── Desktop (Tauri) ────────────────┐
+│  main window      library, installer, settings   │
+│  overlay-labels   transparent label layer        │
+│  overlay-nav      Back · Home · Recents          │
+│  overlay-rail     Screenshot · Rotate · More     │
+│  overlay-mapper   key-mapping panel              │
+└───────────────┬─────────────────────────────────┘
+                │ one runtime, one adb server
+┌───────────────▼─────────────────────────────────┐
+│ Rust core                                        │
+│  runtime     emulator + adb + scrcpy lifecycle   │
+│  input       keyboard hook, profiles, dispatch   │
+│  overlay     anchoring, visibility, placement    │
+│  capture     screenshots, recordings             │
+│  agent       MCP server, CLI client, control API │
+└───────────────┬─────────────────────────────────┘
+                │ adb shell input on one display id
+┌───────────────▼─────────────────────────────────┐
+│ Android Emulator  ·  one virtual display per app │
+└──────────────────────────────────────────────────┘
 ```
 
-## Verify it
+One owner per concern: the runtime owns processes, `InputController` owns
+profiles and key decisions, `Overlay` owns window geometry and visibility, and
+the React layer renders whatever the backend pushes — it never mirrors state.
 
-```bash
-cargo test  --manifest-path src-tauri/Cargo.toml          # domain, AXML, store, adb, sdk
-cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-pnpm exec tsc --noEmit
-pnpm test                                                 # honest-state rendering tests
-cargo run --manifest-path src-tauri/Cargo.toml --example proof # Gate A + B against the real runtime
+## CLI and agents
+
+The `droidwin` command is a client of the running window (loopback endpoint,
+token auth, same permission gate as MCP). It never starts a second emulator.
+
+```powershell
+droidwin status
+droidwin apps list
+droidwin apps open com.fingersoft.hillclimb
+droidwin mapping save com.fingersoft.hillclimb --key W --tap 49,61
+droidwin perf preset performance
+droidwin capture screenshot
+droidwin tools              # 27 commands, 4.1 KB — 6.8x smaller than tools/list
 ```
 
-The `proof` example uses the same modules the app uses — it boots the runtime, installs two real
-FOSS APKs, launches both, checks two distinct HWNDs from the OS, moves and resizes one, closes one,
-and confirms the other survives and the packages are still installed after a manager restart. Its
-report lands in `$DROIDWIN_HOME/proof-report.json` and the evidence is transcribed into
-`docs/RUNTIME_PROOF.md`.
+`droidwin --mcp-stdio` bridges an MCP client to the same endpoint.
 
-## Layout
+## Security
 
-```
-src/                    React + TypeScript UI (presentation only)
-  backend.ts            the only module that talks to Rust
-  screens/              Overview, Installer, Applications, Runtime, Activity, Settings
-  components/           shell, panels, pills, stage list, drop zone, icons
-  styles/               Kyoto Zen tokens and layout
-  assets/fonts/         bundled Instrument Serif + Onest (OFL 1.1)
-src-tauri/src/
-  domain/               typed models, error codes, operation state machine
-  apk/                  archive guards + binary AndroidManifest (AXML) reader
-  runtime/              SDK locator, adb, headless emulator, scrcpy windows
-  store/                SQLite with migrations
-  diag/                 tracing to a daily log file, path redaction
-examples/proof.rs      Gate A/B feasibility harness (not bundled in the installer)
-DroidWin_Vibecoding_Brief/  the product brief this build follows (docs/ inside)
+The agent endpoint binds to loopback only and requires a per-session token. The
+guest-to-host boundary is documented and tested separately — see
+[docs/HOST_ISOLATION.md](docs/HOST_ISOLATION.md) for what is contained, what is
+not, and why running untrusted APKs still deserves a dedicated Windows account.
+
+## Testing
+
+```powershell
+pnpm test                                   # 113 frontend tests
+cargo test --manifest-path src-tauri/Cargo.toml --lib   # 256 Rust tests
 ```
 
-Rules the code keeps: no `adb`/`scrcpy` string outside `runtime/`, no `invoke()` outside
-`backend.ts`, no SQL outside `store/`, and no capability reported as supported until it was verified
-on this machine.
+Live checks were run against the built executable: app launch, emulator boot,
+window per app, click-to-place mapping saved and delivered (`tap 531 1474` on
+display 2), universal `Shift+A/H/R/M/P/O`, screenshot file, rotate, and clean
+shutdown. Details and known limits: [release/DroidWin/BUILD_REPORT.txt](release/DroidWin/BUILD_REPORT.txt).
 
-## Known limits
+## Repository layout
 
-- Every app shares one Android user; there is no per-app sandbox.
-- App windows are streamed virtual displays: Android's back key works, there is no host-side back button.
-- Audio, clipboard sharing and file drop are not verified, so they are reported as unsupported.
-- ARM-only packages cannot run on the x86_64 image; apps needing Google Play services usually fail.
-- `.apk` association is packaged by the installer; the installer itself has not been run on a clean machine here.
-- Very old packages (target SDK below 23) need an explicit testing flag and can render a blank
-  virtual display; a rendering probe or mirror fallback is not built yet.
-- Automatic SDK provisioning, code signing and a DPI matrix are not done.
-- No telemetry, no accounts, no network calls at runtime.
+```text
+src/                 React + TypeScript UI (main window, overlays, screens)
+src-tauri/src/       Rust backend: runtime, input, overlay, capture, agent, cli
+src-tauri/tests/     live harnesses (mapping, capture, isolation, phones)
+release/DroidWin/    shipped EXE, installer, README and build report
+docs/                runtime setup, host isolation, decisions, images
+```
+
+## Known limitations
+
+- Recording an app's own virtual display is not supported by `screenrecord`; the
+  button is therefore not offered.
+- Rotating reopens the window on the other orientation surface; scrcpy ignores a
+  requested window size for a new display, so the frame can keep the old shape.
+- `Ctrl+Shift+R` cannot be rebound yet; the other six can.
+- No control detection: mapping a game is place → key, never a guessed profile.
+
+## License
+
+MIT. See [LICENSE](LICENSE) if present in this repository.

@@ -18,14 +18,22 @@ tauri-build = { version = "2.6.3", features = [] }
 [dependencies]
 base64 = "0.23.1"
 dirs = "7.0.0"
+# Diagnostics read a captured PNG only to decide whether it is one solid colour.
+# The decoder is already in the dependency graph (and the lockfile); using it is
+# cheaper than shipping a second image path or guessing from file size.
+png = "0.18.1"
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+# The one-time runtime download is verified against the SHA-1 Google publishes
+# for the command-line tools archive; a digest was already in the graph via
+# rustls, but not a usable API.
+sha1 = "0.10"
 tauri = { version = "2.11.6", features = [] }
 tauri-plugin-dialog = "2.7.3"
 tauri-plugin-single-instance = "2.4.5"
 thiserror = "2.0.21"
-tokio = { version = "1.53.3", features = ["process", "time", "io-util", "sync", "rt", "macros", "fs"] }
+tokio = { version = "1.53.3", features = ["process", "time", "io-util", "sync", "rt", "macros", "fs", "net"] }
 tracing = "0.1.44"
 tracing-appender = "0.2.5"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }

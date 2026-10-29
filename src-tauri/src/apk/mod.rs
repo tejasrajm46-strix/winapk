@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use base64::Engine as _;
 
-use crate::domain::{ApkInspection, DwError, DwResult, ErrorCode, SignatureInfo};
+use crate::domain::{ApkInspection, AppOrientation, DwError, DwResult, ErrorCode, SignatureInfo};
 
 const MAX_APK_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 const MAX_MANIFEST_BYTES: u64 = 8 * 1024 * 1024;
@@ -36,16 +36,26 @@ pub fn validate(path: &Path) -> DwResult<u64> {
             "That path is not a file.",
         ));
     }
-    if !path
+    let extension = path
         .extension()
-        .map(|e| e.eq_ignore_ascii_case("apk"))
-        .unwrap_or(false)
-    {
+        .and_then(|e| e.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if extension != "apk" {
+        let split = matches!(extension.as_str(), "xapk" | "apks" | "aab");
         return Err(DwError::new(
             ErrorCode::UnsupportedPackage,
-            "DroidWin installs .apk packages.",
+            if split {
+                "That is a split package or App Bundle, not a single APK."
+            } else {
+                "DroidWin installs .apk packages."
+            },
         )
-        .detail("Expected a file whose extension is .apk"));
+        .detail(if split {
+            "This build installs one .apk at a time; split installation (`adb install-multiple`) is not implemented. Extract the base APK, or install the splits with adb."
+        } else {
+            "Expected a file whose extension is .apk"
+        }));
     }
     if meta.len() == 0 {
         return Err(DwError::new(
@@ -92,6 +102,8 @@ pub fn inspect(path: &Path, aapt2: Option<&Path>) -> DwResult<ApkInspection> {
     let mut abis: Vec<String> = Vec::new();
     let mut manifest_entry = None;
     let mut v1_signature = false;
+    // A single APK never contains another .apk; an XAPK/APKS/App Bundle does.
+    let mut nested_package = false;
     for i in 0..archive.len() {
         let entry = archive.by_index(i).map_err(|e| {
             DwError::new(ErrorCode::CorruptArchive, "Archive entry is unreadable.")
@@ -100,6 +112,9 @@ pub fn inspect(path: &Path, aapt2: Option<&Path>) -> DwResult<ApkInspection> {
         let name = entry.name().to_string();
         if name == "AndroidManifest.xml" {
             manifest_entry = Some(i);
+        }
+        if name.to_ascii_lowercase().ends_with(".apk") {
+            nested_package = true;
         }
         if let Some(rest) = name.strip_prefix("lib/") {
             if let Some(abi) = rest.split('/').next() {
@@ -118,6 +133,15 @@ pub fn inspect(path: &Path, aapt2: Option<&Path>) -> DwResult<ApkInspection> {
     let abis = normalize_abis(abis);
 
     let Some(index) = manifest_entry else {
+        if nested_package {
+            return Err(DwError::new(
+                ErrorCode::UnsupportedPackage,
+                "That archive contains split APKs instead of one package file.",
+            )
+            .detail(
+                "It has no top-level AndroidManifest.xml but does contain .apk entries, which is how XAPK/APKS bundles are built. DroidWin installs one .apk; split installation is not implemented.",
+            ));
+        }
         return Err(DwError::new(
             ErrorCode::MissingManifest,
             "That archive has no AndroidManifest.xml, so it is not an installable Android package.",
@@ -223,6 +247,19 @@ pub fn inspect(path: &Path, aapt2: Option<&Path>) -> DwResult<ApkInspection> {
     if attrs.min_sdk.is_none() {
         unavailable.push("Minimum SDK — not declared in the manifest.".to_string());
     }
+    // The orientation decides the surface the app window is drawn on. Saying
+    // "not declared" is more useful than silently assuming portrait, because a
+    // fixed-width game without a declaration can still be clipped.
+    let orientation = attrs.orientation.map(|o| match o {
+        axml::ScreenOrientation::Portrait => AppOrientation::Portrait,
+        axml::ScreenOrientation::Landscape => AppOrientation::Landscape,
+    });
+    if orientation.is_none() {
+        unavailable.push(
+            "Display orientation — the launchable activity does not lock one; DroidWin opens it on a portrait surface."
+                .to_string(),
+        );
+    }
 
     Ok(ApkInspection {
         path: display(path),
@@ -236,6 +273,7 @@ pub fn inspect(path: &Path, aapt2: Option<&Path>) -> DwResult<ApkInspection> {
         version_code: attrs.version_code,
         min_sdk: attrs.min_sdk,
         target_sdk: attrs.target_sdk,
+        orientation,
         abis,
         size_bytes: size,
         icon,
@@ -531,6 +569,32 @@ mod tests {
         std::fs::write(&path, b"this is plainly not a zip container").expect("write fixture");
         let err = inspect(&path, None).expect_err("garbage must fail");
         assert_eq!(err.code, ErrorCode::CorruptArchive);
+    }
+
+    #[test]
+    fn a_split_package_is_named_instead_of_blamed_on_a_missing_manifest() {
+        let temp = TempDir::new("split");
+        let path = temp.file("bundle.apk");
+        write_zip(
+            &path,
+            &[
+                ("base.apk", b"PK\x03\x04".as_slice()),
+                ("split_config.arm64_v8a.apk", b"PK\x03\x04".as_slice()),
+            ],
+        );
+        let err = inspect(&path, None).expect_err("split package must fail");
+        assert_eq!(err.code, ErrorCode::UnsupportedPackage);
+        assert!(err.summary.contains("split APKs"));
+    }
+
+    #[test]
+    fn an_xapk_extension_is_refused_with_its_own_reason() {
+        let temp = TempDir::new("xapk");
+        let path = temp.file("app.xapk");
+        std::fs::write(&path, b"PK\x03\x04").expect("write fixture");
+        let err = validate(&path).expect_err("xapk must fail");
+        assert_eq!(err.code, ErrorCode::UnsupportedPackage);
+        assert!(err.summary.contains("split package"));
     }
 
     #[test]

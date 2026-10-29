@@ -4,23 +4,51 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
+use base64::Engine as _;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::agent::{self, skills, ActionRecord, AgentStatus, Permission};
 use crate::apk;
+use crate::capture::{Capture, RecordingState, SavedRecording, SavedShot};
+use crate::diagnose::{Diagnoser, Recovery, RecoveryOutcome, Report};
 use crate::domain::{
-    now_ms, ApkInspection, AppWindow, DwError, EnvReport, ErrorCode, InstalledApp, Stage,
-    StageEvent,
+    now_ms, ApkInspection, AppWindow, DwError, DwResult, EnvReport, ErrorCode, InstalledApp,
+    PhoneScreen, RuntimeState, SetupReport, Stage, StageEvent,
 };
+use crate::input::{InputAction, InputState};
+use crate::runtime::display::Orientation;
+use crate::runtime::display_override::{self, DisplayInfo};
 use crate::runtime::emulator_runtime::{AVD_NAME, SYSTEM_IMAGE};
+use crate::runtime::hardware::{self, GpuMode, HardwareReport, Preset};
+use crate::runtime::install::Setup;
+use crate::runtime::scrcpy::KeyboardMode;
 use crate::runtime::sdk::Sdk;
 use crate::runtime::{EmulatorRuntime, InstallOutcome, RuntimeEvents};
 use crate::store::{OperationRecord, Store};
 
 pub struct AppState {
     pub runtime: Arc<EmulatorRuntime>,
+    pub phone_stream: Arc<crate::runtime::phone_stream::PhoneStream>,
+    /// Saved stills and recordings. It records the phone's own display through
+    /// the same adb as everything else, and holds no second emulator.
+    pub capture: Arc<Capture>,
     pub store: Arc<Store>,
+    /// The agent control layer. It drives `runtime`; it never owns an emulator.
+    pub agent: Arc<agent::AgentState>,
+    /// Per-app keyboard mapping. Off for every package until its profile is
+    /// switched on, and it dispatches through the same runtime and displays.
+    pub input: Arc<crate::input::InputController>,
+    /// The nav bar and mapping labels drawn over the app window in front.
+    pub overlay: Arc<crate::overlay::Overlay>,
+    /// "Attention Needed": diagnostics built from the same runtime and event
+    /// feed, with targeted recovery. It owns no process and no poller.
+    pub diagnose: Arc<Diagnoser>,
+    /// The one-time Android runtime installation. It writes only inside the SDK
+    /// root the setup screen names, and it never starts a runtime itself.
+    pub setup: Arc<Setup>,
     pub data_dir: PathBuf,
     /// Keeps the non-blocking log writer alive for the process lifetime.
     pub log_guard: Option<tracing_appender::non_blocking::WorkerGuard>,
@@ -47,20 +75,38 @@ where
         .collect()
 }
 
-/// Bridges runtime notifications into webview events.
-pub struct TauriEvents(pub AppHandle);
+/// Bridges runtime notifications into webview events, and app lifecycle into the
+/// in-process bus the trigger engine listens on.
+pub struct TauriEvents {
+    pub app: AppHandle,
+    pub bus: crate::runtime::EventBus,
+}
+
+impl TauriEvents {
+    pub fn new(app: AppHandle) -> Self {
+        Self {
+            app,
+            bus: crate::runtime::EventBus::new(),
+        }
+    }
+}
 
 impl RuntimeEvents for TauriEvents {
     fn stage(&self, event: &StageEvent) {
-        let _ = self.0.emit("op://stage", event);
+        let _ = self.app.emit("op://stage", event);
     }
 
     fn status(&self, status: &crate::domain::RuntimeStatus) {
-        let _ = self.0.emit("runtime://status", status);
+        let _ = self.app.emit("runtime://status", status);
     }
 
     fn apps_changed(&self) {
-        let _ = self.0.emit("apps://changed", ());
+        let _ = self.app.emit("apps://changed", ());
+    }
+
+    fn app_event(&self, event: &crate::runtime::AppEvent) {
+        self.bus.publish(event.clone());
+        let _ = self.app.emit("app://event", event);
     }
 }
 
@@ -160,11 +206,480 @@ pub async fn runtime_start(app: AppHandle) -> Result<crate::domain::RuntimeStatu
         .await
 }
 
+/// Host facts and the emulator plan, with Android's own numbers when it is up.
+#[tauri::command]
+pub async fn hardware_report(app: AppHandle) -> Result<HardwareReport, DwError> {
+    let state = app.state::<AppState>();
+    Ok(state.runtime.hardware_report(&state.store).await)
+}
+
+/// Save an automatic or custom plan. Values are validated before anything is
+/// written, and the plan only applies on the next emulator start.
+#[tauri::command]
+pub async fn hardware_apply(
+    app: AppHandle,
+    mode: String,
+    cores: Option<u32>,
+    ram_mb: Option<u32>,
+    gpu: Option<String>,
+) -> Result<HardwareReport, DwError> {
+    let state = app.state::<AppState>();
+    let host = hardware::host_facts();
+    let plan = match mode.as_str() {
+        "auto" => hardware::recommend(&host),
+        "custom" => {
+            let gpu = gpu.as_deref().and_then(GpuMode::parse).ok_or_else(|| {
+                DwError::new(ErrorCode::InvalidConfig, "Choose a supported GPU mode.")
+            })?;
+            hardware::custom_plan(
+                &host,
+                cores.unwrap_or(hardware::recommend(&host).cores),
+                ram_mb.unwrap_or(hardware::recommend(&host).ram_mb),
+                gpu,
+            )?
+        }
+        _ => {
+            return Err(DwError::new(
+                ErrorCode::InvalidConfig,
+                "Choose the automatic or custom hardware plan.",
+            ))
+        }
+    };
+    hardware::persist(&state.store, &plan)?;
+    Ok(state.runtime.hardware_report(&state.store).await)
+}
+
+/// The saved keyboard mode, in the values the UI uses.
+#[tauri::command]
+pub async fn keyboard_mode(app: AppHandle) -> Result<String, DwError> {
+    let state = app.state::<AppState>();
+    Ok(state
+        .store
+        .setting("runtime.keyboard_mode")
+        .and_then(|v| KeyboardMode::parse(&v))
+        .unwrap_or(KeyboardMode::Auto)
+        .as_str()
+        .to_string())
+}
+
+/// Persist a keyboard mode. `uhid` needs Android 9+; `sdk` is always available.
+#[tauri::command]
+pub async fn set_keyboard_mode(app: AppHandle, mode: String) -> Result<String, DwError> {
+    let state = app.state::<AppState>();
+    let parsed = KeyboardMode::parse(&mode).ok_or_else(|| {
+        DwError::new(
+            ErrorCode::InvalidConfig,
+            "Choose the automatic, hardware (uhid) or simulated (sdk) keyboard.",
+        )
+    })?;
+    state
+        .store
+        .set_setting("runtime.keyboard_mode", parsed.as_str())?;
+    Ok(parsed.as_str().to_string())
+}
+
 #[tauri::command]
 pub async fn runtime_stop(app: AppHandle) -> Result<(), DwError> {
     let state = app.state::<AppState>();
-    state.runtime.shutdown().await;
+    state.input.release_all();
+    state.input.flush().await;
+    state.phone_stream.stop(None).await;
+    // A recorder left running would hold the display and write into a runtime
+    // that is going away.
+    state.capture.abort_recording(&state.runtime).await;
+    state.runtime.stop_now().await;
     Ok(())
+}
+
+/// The setup report, with "ready" reserved for a boot the runtime verified.
+/// Everything the setup screen shows about files arrives from `Setup::report`;
+/// this adds the one fact the files cannot carry.
+async fn setup_report(state: &AppState) -> SetupReport {
+    let booted = matches!(
+        state.runtime.status(&state.store).await.state,
+        RuntimeState::Ready
+    );
+    state.setup.report(&state.store, booted)
+}
+
+#[tauri::command]
+pub async fn runtime_setup_state(app: AppHandle) -> Result<SetupReport, DwError> {
+    let state = app.state::<AppState>();
+    Ok(setup_report(&state).await)
+}
+
+/// Install the runtime, then boot it once. "Ready" has to mean a device
+/// answered adb, not that files exist on disk.
+#[tauri::command]
+pub async fn runtime_setup_start(
+    app: AppHandle,
+    accept_licenses: bool,
+) -> Result<SetupReport, DwError> {
+    let state = app.state::<AppState>();
+    let store = Arc::clone(&state.store);
+    state.setup.run(&store, accept_licenses).await?;
+    state.runtime.probe_now();
+    let status = state.runtime.ensure_ready(&store, "setup").await?;
+    Ok(state
+        .setup
+        .report(&store, matches!(status.state, RuntimeState::Ready)))
+}
+
+#[tauri::command]
+pub async fn runtime_setup_cancel(app: AppHandle) -> Result<(), DwError> {
+    app.state::<AppState>().setup.cancel();
+    Ok(())
+}
+
+/// Point DroidWin at an SDK directory, or at its own managed one when `path` is
+/// null. The choice is stored and survives a restart.
+#[tauri::command]
+pub async fn runtime_setup_location(
+    app: AppHandle,
+    path: Option<String>,
+) -> Result<SetupReport, DwError> {
+    let state = app.state::<AppState>();
+    match path
+        .map(|value| value.trim().to_string())
+        .filter(|v| !v.is_empty())
+    {
+        Some(value) => {
+            let root = PathBuf::from(&value);
+            crate::runtime::install::ensure_writable_root(&root)?;
+            crate::runtime::sdk::set_configured_root(Some(root));
+            state.store.set_setting("runtime.sdk_root", &value)?;
+        }
+        None => {
+            crate::runtime::sdk::set_configured_root(None);
+            state.store.set_setting("runtime.sdk_root", "")?;
+        }
+    }
+    state.runtime.probe_now();
+    Ok(setup_report(&state).await)
+}
+
+#[tauri::command]
+pub fn runtime_stop_on_exit(app: AppHandle) -> bool {
+    app.state::<AppState>().runtime.stop_on_exit()
+}
+
+#[tauri::command]
+pub fn set_runtime_stop_on_exit(app: AppHandle, enabled: bool) -> Result<bool, DwError> {
+    let state = app.state::<AppState>();
+    state
+        .store
+        .set_setting("runtime.stop_on_exit", if enabled { "1" } else { "0" })?;
+    state.runtime.set_stop_on_exit(enabled);
+    Ok(enabled)
+}
+
+#[tauri::command]
+pub async fn phone_stream_start(
+    app: AppHandle,
+    id: String,
+    output: tauri::ipc::Channel<tauri::ipc::Response>,
+) -> Result<(), DwError> {
+    if id.is_empty() || id.len() > 64 || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+    {
+        return Err(DwError::new(
+            ErrorCode::InvalidRequest,
+            "Invalid phone stream identifier.",
+        ));
+    }
+    let state = app.state::<AppState>();
+    let adb = state.runtime.adb().ok_or_else(|| {
+        DwError::new(
+            ErrorCode::RuntimeNotConfigured,
+            "The Android SDK is not configured.",
+        )
+    })?;
+    state
+        .phone_stream
+        .start(adb, state.runtime.serial(), id, output)
+        .await
+}
+
+#[tauri::command]
+pub async fn phone_dimensions(app: AppHandle) -> Result<(u32, u32), DwError> {
+    let state = app.state::<AppState>();
+    let adb = state.runtime.adb().ok_or_else(|| {
+        DwError::new(
+            ErrorCode::RuntimeNotConfigured,
+            "The Android SDK is not configured.",
+        )
+    })?;
+    let display = adb
+        .display_focus(&state.runtime.serial())
+        .await?
+        .into_iter()
+        .find(|display| display.display_id == crate::runtime::display::DEVICE_DISPLAY)
+        .ok_or_else(|| {
+            DwError::new(
+                ErrorCode::RuntimeUnavailable,
+                "Android did not report the phone display.",
+            )
+        })?;
+    match (display.width, display.height) {
+        (Some(width), Some(height)) if width > 0 && height > 0 => Ok((width, height)),
+        _ => Err(DwError::new(
+            ErrorCode::RuntimeUnavailable,
+            "Android did not report the phone's dimensions.",
+        )),
+    }
+}
+
+#[tauri::command]
+pub async fn phone_stream_stop(app: AppHandle, id: String) -> Result<(), DwError> {
+    app.state::<AppState>().phone_stream.stop(Some(&id)).await;
+    Ok(())
+}
+
+/// One still of the device's own screen: what the virtual phone is looking at.
+///
+/// It is deliberately a still, not a stream. DroidWin's app windows are already a
+/// live view of their own Android displays; this is the phone's home screen, and
+/// a caller decides how often to refresh it. Nothing is cached here, so an image
+/// the UI shows is always one Android just produced.
+#[tauri::command]
+pub async fn phone_screen(app: AppHandle) -> Result<PhoneScreen, DwError> {
+    let state = app.state::<AppState>();
+    let (png, width, height) = state.runtime.device_screen().await?;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&png);
+    Ok(PhoneScreen {
+        display_id: crate::runtime::display::DEVICE_DISPLAY,
+        width,
+        height,
+        image: format!("data:image/png;base64,{encoded}"),
+        captured_at: now_ms(),
+    })
+}
+
+/// Tap the device's own display at a point of the capture the UI is showing.
+#[tauri::command]
+pub async fn phone_tap(app: AppHandle, x: u32, y: u32) -> Result<(), DwError> {
+    check_touch(x, y)?;
+    let state = app.state::<AppState>();
+    state.runtime.device_tap(x, y).await
+}
+
+/// One drag on the device's own display — a swipe, for scrolling a list or
+/// turning a launcher page.
+#[tauri::command]
+pub async fn phone_swipe(
+    app: AppHandle,
+    x1: u32,
+    y1: u32,
+    x2: u32,
+    y2: u32,
+    duration_ms: Option<u32>,
+) -> Result<(), DwError> {
+    check_touch(x1, y1)?;
+    check_touch(x2, y2)?;
+    // Android needs a duration for a swipe, and a slow one becomes a drag that
+    // selects instead of scrolling.
+    let duration = Duration::from_millis(u64::from(duration_ms.unwrap_or(220).clamp(20, 2_000)));
+    let state = app.state::<AppState>();
+    state
+        .runtime
+        .device_swipe((x1, y1), (x2, y2), duration)
+        .await
+}
+
+/// Send one key to the device's own display: Enter, Tab, Back, Home, an arrow,
+/// or any Android keycode name or number.
+#[tauri::command]
+pub async fn phone_key(app: AppHandle, key: String) -> Result<(), DwError> {
+    let keycode = crate::agent::control::parse_key(&key)?;
+    let state = app.state::<AppState>();
+    state.runtime.device_key(keycode).await
+}
+
+/// Type text into whatever field the device's own display has focused.
+#[tauri::command]
+pub async fn phone_text(app: AppHandle, text: String) -> Result<(), DwError> {
+    if text.chars().count() > 512 {
+        return Err(DwError::new(
+            ErrorCode::InvalidRequest,
+            "That is more text than the phone can be given at once.",
+        )
+        .detail(format!("{} characters were sent.", text.chars().count())));
+    }
+    let state = app.state::<AppState>();
+    state.runtime.device_text(&text).await
+}
+
+/// Where saved captures go: the user's own Pictures or Videos folder, in a
+/// DroidWin subfolder. A machine that does not report those folders gets the
+/// data directory instead, so a save never fails for lack of a destination —
+/// and never lands in a system folder.
+#[derive(Clone, Copy)]
+enum CaptureKind {
+    Picture,
+    Video,
+}
+
+fn capture_directory(state: &AppState, kind: CaptureKind) -> PathBuf {
+    let base = match kind {
+        CaptureKind::Picture => dirs::picture_dir(),
+        CaptureKind::Video => dirs::video_dir(),
+    };
+    base.unwrap_or_else(|| state.data_dir.clone())
+        .join(crate::capture::FOLDER)
+}
+
+/// Capture the phone's screen into the user's Pictures folder.
+#[tauri::command]
+pub async fn phone_screenshot(app: AppHandle) -> Result<SavedShot, DwError> {
+    let state = app.state::<AppState>();
+    let directory = capture_directory(&state, CaptureKind::Picture);
+    Capture::save_screenshot(&state.runtime, &directory).await
+}
+
+#[tauri::command]
+pub async fn recording_start(app: AppHandle) -> Result<RecordingState, DwError> {
+    let state = app.state::<AppState>();
+    let directory = capture_directory(&state, CaptureKind::Video);
+    state
+        .capture
+        .start_recording(&state.runtime, &directory)
+        .await
+}
+
+#[tauri::command]
+pub async fn recording_stop(app: AppHandle) -> Result<SavedRecording, DwError> {
+    let state = app.state::<AppState>();
+    state.capture.stop_recording(&state.runtime).await
+}
+
+#[tauri::command]
+pub async fn recording_status(app: AppHandle) -> Result<RecordingState, DwError> {
+    Ok(app.state::<AppState>().capture.recording_state().await)
+}
+
+/// The phone display's own size and density, as Android reports them.
+#[tauri::command]
+pub async fn phone_display(app: AppHandle) -> Result<DisplayInfo, DwError> {
+    let state = app.state::<AppState>();
+    let adb = state.runtime.adb().ok_or_else(|| {
+        DwError::new(
+            ErrorCode::RuntimeNotConfigured,
+            "The Android SDK is not configured.",
+        )
+    })?;
+    display_override::read(&adb, &state.runtime.serial()).await
+}
+
+/// Resize the phone's display without restarting the emulator.
+#[tauri::command]
+pub async fn set_phone_display(
+    app: AppHandle,
+    width: u32,
+    height: u32,
+    density: Option<u32>,
+) -> Result<DisplayInfo, DwError> {
+    let state = app.state::<AppState>();
+    let adb = state.runtime.adb().ok_or_else(|| {
+        DwError::new(
+            ErrorCode::RuntimeNotConfigured,
+            "The Android SDK is not configured.",
+        )
+    })?;
+    display_override::apply(&adb, &state.runtime.serial(), width, height, density).await
+}
+
+#[tauri::command]
+pub async fn reset_phone_display(app: AppHandle) -> Result<DisplayInfo, DwError> {
+    let state = app.state::<AppState>();
+    let adb = state.runtime.adb().ok_or_else(|| {
+        DwError::new(
+            ErrorCode::RuntimeNotConfigured,
+            "The Android SDK is not configured.",
+        )
+    })?;
+    display_override::reset(&adb, &state.runtime.serial()).await
+}
+
+/// Save one of the named performance presets. It is a real plan, validated the
+/// same way a hand-written one is.
+#[tauri::command]
+pub async fn hardware_preset(app: AppHandle, preset: String) -> Result<HardwareReport, DwError> {
+    let state = app.state::<AppState>();
+    let parsed = Preset::parse(&preset).ok_or_else(|| {
+        DwError::new(
+            ErrorCode::InvalidConfig,
+            "Choose the balanced, performance or compatibility preset.",
+        )
+        .detail(format!("\"{preset}\" is not a preset DroidWin knows."))
+    })?;
+    let host = hardware::host_facts();
+    let plan = hardware::preset_plan(&host, parsed);
+    hardware::persist(&state.store, &plan)?;
+    Ok(state.runtime.hardware_report(&state.store).await)
+}
+
+/// Show a file DroidWin saved in Explorer. Only files inside DroidWin's own
+/// capture folders (or its data directory) can be revealed, so a stray path from
+/// a page cannot be used to open something arbitrary.
+#[tauri::command]
+pub async fn reveal_path(app: AppHandle, path: String) -> Result<(), DwError> {
+    let state = app.state::<AppState>();
+    let target = PathBuf::from(&path);
+    let canonical = target.canonicalize().map_err(|e| {
+        DwError::new(ErrorCode::InvalidPath, "That file is no longer there.")
+            .detail(format!("{}: {e}", target.display()))
+    })?;
+    if !canonical.is_file() {
+        return Err(DwError::new(
+            ErrorCode::InvalidPath,
+            "That path is not a file DroidWin can open.",
+        ));
+    }
+    let allowed = [
+        capture_directory(&state, CaptureKind::Picture),
+        capture_directory(&state, CaptureKind::Video),
+        state.data_dir.clone(),
+    ];
+    let inside = allowed
+        .iter()
+        .filter_map(|dir| dir.canonicalize().ok())
+        .any(|dir| canonical.starts_with(&dir));
+    if !inside {
+        return Err(DwError::new(
+            ErrorCode::PermissionDenied,
+            "DroidWin only opens the files it saved itself.",
+        )
+        .detail("Choose a capture from the phone screen; other paths are left to Explorer."));
+    }
+    let mut cmd = std::process::Command::new("explorer.exe");
+    cmd.arg(format!("/select,{}", canonical.display()));
+    crate::proc::no_console(&mut cmd);
+    cmd.spawn().map_err(|e| {
+        DwError::io(
+            ErrorCode::BackendFailure,
+            "Could not open the file in Explorer.",
+            &e,
+        )
+    })?;
+    Ok(())
+}
+
+/// A phone touch is a pixel pair on a real display. The UI converts a click with
+/// the capture size it is displaying, so a value beyond any display means the
+/// caller sent something that is not a point — refuse it rather than pass it to
+/// Android.
+fn check_touch(x: u32, y: u32) -> DwResult<()> {
+    const MAX_EDGE: u32 = 20_000;
+    if x < MAX_EDGE && y < MAX_EDGE {
+        Ok(())
+    } else {
+        Err(DwError::new(
+            ErrorCode::InvalidRequest,
+            "That point is not on the phone's screen.",
+        )
+        .detail(format!(
+            "({x}, {y}) is beyond any display DroidWin can drive."
+        )))
+    }
 }
 
 #[tauri::command]
@@ -319,6 +834,7 @@ pub async fn install_apk(
         "Done.",
         Some(outcome.package_id.clone()),
     );
+    state.diagnose.invalidate();
     Ok(outcome)
 }
 
@@ -337,6 +853,8 @@ pub async fn launch_app(app: AppHandle, package_id: String) -> Result<AppWindow,
         .into_iter()
         .find(|c| c.package_id == package_id)
         .and_then(|c| c.label);
+    // A launch changes exactly what a report measured a moment ago.
+    state.diagnose.invalidate();
     let window = state
         .runtime
         .launch(&package_id, label.as_deref(), &state.store, "launch")
@@ -345,15 +863,75 @@ pub async fn launch_app(app: AppHandle, package_id: String) -> Result<AppWindow,
     Ok(window)
 }
 
+/// One still of the app window's own display, for the rail's Screenshot button.
+#[tauri::command]
+pub async fn app_screenshot(app: AppHandle, package_id: String) -> Result<SavedShot, DwError> {
+    let state = app.state::<AppState>();
+    let display = state.runtime.display_of(&package_id).ok_or_else(|| {
+        DwError::new(
+            ErrorCode::LaunchFailed,
+            "Android has not reported a display for that window yet.",
+        )
+        .detail("Give the window a moment, then take the screenshot again.")
+    })?;
+    let directory = capture_directory(&state, CaptureKind::Picture);
+    Capture::save_display_screenshot(&state.runtime, &directory, display).await
+}
+
+/// Open the app in the other orientation.
+///
+/// A window's Android display is created when the window opens, and nothing can
+/// rotate it afterwards, so this records the choice and opens the window again
+/// on a surface of the other shape. The stored choice is what makes it stick.
+#[tauri::command]
+pub async fn rotate_app_window(app: AppHandle, package_id: String) -> Result<AppWindow, DwError> {
+    let state = app.state::<AppState>();
+    let current = state
+        .runtime
+        .geometry_of(&package_id)
+        .map(|surface| surface.geometry.orientation)
+        .or_else(|| {
+            state
+                .store
+                .setting(&Orientation::setting_key(&package_id))
+                .and_then(|value| Orientation::parse(&value))
+        })
+        .unwrap_or(Orientation::Portrait);
+    let next = current.flipped();
+    state
+        .store
+        .set_setting(&Orientation::setting_key(&package_id), next.as_str())?;
+    state.diagnose.invalidate();
+    state.input.release_package(&package_id);
+    state.input.flush().await;
+    state.runtime.close_window(&package_id).await?;
+    let label = state
+        .store
+        .cached_apps()
+        .into_iter()
+        .find(|c| c.package_id == package_id)
+        .and_then(|c| c.label);
+    state
+        .runtime
+        .launch(&package_id, label.as_deref(), &state.store, "rotate")
+        .await
+}
+
 #[tauri::command]
 pub async fn close_app_window(app: AppHandle, package_id: String) -> Result<(), DwError> {
     let state = app.state::<AppState>();
+    state.diagnose.invalidate();
+    state.input.release_package(&package_id);
+    state.input.flush().await;
     state.runtime.close_window(&package_id).await
 }
 
 #[tauri::command]
 pub async fn stop_app(app: AppHandle, package_id: String) -> Result<(), DwError> {
     let state = app.state::<AppState>();
+    state.diagnose.invalidate();
+    state.input.release_package(&package_id);
+    state.input.flush().await;
     state.runtime.close_window(&package_id).await?;
     state.runtime.stop_app(&package_id).await
 }
@@ -367,6 +945,8 @@ pub async fn uninstall_app(
     let state = app.state::<AppState>();
     let started = now_ms();
     let op = op_id();
+    state.input.release_package(&package_id);
+    state.input.flush().await;
     match state
         .runtime
         .uninstall(&package_id, delete_data, &state.store)
@@ -375,6 +955,7 @@ pub async fn uninstall_app(
         // The runtime's sentence is recorded verbatim: it says what Android
         // reported about retained data, not what we hoped happened.
         Ok(message) => {
+            state.diagnose.invalidate();
             record(
                 &state.store,
                 OperationRecord::finished(
@@ -435,17 +1016,246 @@ pub async fn paths(app: AppHandle) -> Result<Paths, DwError> {
 pub async fn open_logs(app: AppHandle) -> Result<(), DwError> {
     let state = app.state::<AppState>();
     let dir = crate::diag::log_dir(&state.data_dir);
-    std::process::Command::new("explorer.exe")
-        .arg(&dir)
-        .spawn()
-        .map_err(|e| {
-            DwError::io(
-                ErrorCode::BackendFailure,
-                "Could not open the log folder.",
-                &e,
-            )
-        })?;
+    let mut cmd = std::process::Command::new("explorer.exe");
+    cmd.arg(&dir);
+    crate::proc::no_console(&mut cmd);
+    cmd.spawn().map_err(|e| {
+        DwError::io(
+            ErrorCode::BackendFailure,
+            "Could not open the log folder.",
+            &e,
+        )
+    })?;
     Ok(())
+}
+
+#[tauri::command]
+pub async fn agent_status(app: AppHandle) -> Result<AgentStatus, DwError> {
+    let state = app.state::<AppState>();
+    Ok(state.agent.status().await)
+}
+
+#[tauri::command]
+pub async fn agent_start(app: AppHandle) -> Result<AgentStatus, DwError> {
+    let state = app.state::<AppState>();
+    Arc::clone(&state.agent).start().await?;
+    Ok(state.agent.status().await)
+}
+
+#[tauri::command]
+pub async fn agent_stop(app: AppHandle) -> Result<AgentStatus, DwError> {
+    let state = app.state::<AppState>();
+    state.agent.stop().await;
+    Ok(state.agent.status().await)
+}
+
+/// Pausing stops waits that are already in flight, not just the next call.
+#[tauri::command]
+pub async fn agent_set_paused(app: AppHandle, paused: bool) -> Result<AgentStatus, DwError> {
+    let state = app.state::<AppState>();
+    state.agent.set_paused(paused)?;
+    Ok(state.agent.status().await)
+}
+
+#[tauri::command]
+pub async fn agent_set_permission(
+    app: AppHandle,
+    permission: String,
+) -> Result<AgentStatus, DwError> {
+    let state = app.state::<AppState>();
+    let parsed = Permission::parse(&permission).ok_or_else(|| {
+        DwError::new(
+            ErrorCode::InvalidConfig,
+            "Choose read-only or control for agent access.",
+        )
+    })?;
+    state.agent.set_permission(parsed)?;
+    Ok(state.agent.status().await)
+}
+
+#[tauri::command]
+pub async fn agent_actions(
+    app: AppHandle,
+    limit: Option<usize>,
+) -> Result<Vec<ActionRecord>, DwError> {
+    let state = app.state::<AppState>();
+    Ok(state.agent.log().recent(limit.unwrap_or(30)))
+}
+
+#[tauri::command]
+pub async fn agent_skills(app: AppHandle) -> Result<Vec<skills::SkillInfo>, DwError> {
+    let state = app.state::<AppState>();
+    skills::discover(&state.data_dir, &state.store)
+}
+
+#[tauri::command]
+pub async fn agent_set_skill(
+    app: AppHandle,
+    id: String,
+    enabled: bool,
+) -> Result<Vec<skills::SkillInfo>, DwError> {
+    let state = app.state::<AppState>();
+    skills::set_enabled(&state.data_dir, &state.store, &id, enabled)?;
+    skills::discover(&state.data_dir, &state.store)
+}
+
+#[tauri::command]
+pub async fn agent_install_skill(
+    app: AppHandle,
+    path: String,
+) -> Result<Vec<skills::SkillInfo>, DwError> {
+    let state = app.state::<AppState>();
+    let source = PathBuf::from(path);
+    skills::install(&state.data_dir, &source)?;
+    skills::discover(&state.data_dir, &state.store)
+}
+
+#[tauri::command]
+pub async fn agent_remove_skill(
+    app: AppHandle,
+    id: String,
+) -> Result<Vec<skills::SkillInfo>, DwError> {
+    let state = app.state::<AppState>();
+    skills::remove(&state.data_dir, &state.store, &id)?;
+    skills::discover(&state.data_dir, &state.store)
+}
+
+/// The exact tool surface an agent sees, for the UI's capability list.
+#[tauri::command]
+pub async fn input_state(app: AppHandle, package_id: String) -> Result<InputState, DwError> {
+    let state = app.state::<AppState>();
+    Ok(state.input.state(&package_id))
+}
+
+/// Add or replace one key's mapping. Saving does not switch mapping on: the
+/// profile stays off until the user enables it.
+#[tauri::command]
+pub async fn save_input_mapping(
+    app: AppHandle,
+    package_id: String,
+    key: u32,
+    action: InputAction,
+) -> Result<InputState, DwError> {
+    let state = app.state::<AppState>();
+    let next = state.input.save(&package_id, key, action)?;
+    // A point picked on the game belongs to the mapping that was just saved;
+    // the panel must not offer it again without a fresh click.
+    state.overlay.clear_pending();
+    Ok(next)
+}
+
+#[tauri::command]
+pub async fn remove_input_mapping(
+    app: AppHandle,
+    package_id: String,
+    key: u32,
+) -> Result<InputState, DwError> {
+    let state = app.state::<AppState>();
+    state.input.remove(&package_id, key)
+}
+
+#[tauri::command]
+pub async fn set_input_mapping_enabled(
+    app: AppHandle,
+    package_id: String,
+    key: u32,
+    enabled: bool,
+) -> Result<InputState, DwError> {
+    let state = app.state::<AppState>();
+    state.input.set_mapping_enabled(&package_id, key, enabled)
+}
+
+/// The per-app switch. Enabling arms the keyboard hook; disabling releases any
+/// key this app's profile was holding, so the app keeps no pressed touch.
+#[tauri::command]
+pub async fn set_input_profile_enabled(
+    app: AppHandle,
+    package_id: String,
+    enabled: bool,
+) -> Result<InputState, DwError> {
+    let state = app.state::<AppState>();
+    state.input.set_enabled(&package_id, enabled)
+}
+
+#[tauri::command]
+pub async fn reset_input_mappings(
+    app: AppHandle,
+    package_id: String,
+) -> Result<InputState, DwError> {
+    let state = app.state::<AppState>();
+    state.input.reset(&package_id)
+}
+
+/// The universal Android shortcuts, as they are bound right now.
+fn universal_list(controller: &crate::input::InputController) -> Vec<serde_json::Value> {
+    controller
+        .universal_bindings()
+        .into_iter()
+        .map(|(action, chord)| {
+            serde_json::json!({
+                "action": action.id(),
+                "label": action.label(),
+                "chord": chord.label(),
+                "android_key": action.android_key(),
+            })
+        })
+        .collect()
+}
+
+#[tauri::command]
+pub async fn universal_bindings(app: AppHandle) -> Result<Vec<serde_json::Value>, DwError> {
+    let state = app.state::<AppState>();
+    Ok(universal_list(&state.input))
+}
+
+#[tauri::command]
+pub async fn set_universal_binding(
+    app: AppHandle,
+    action: String,
+    chord: String,
+) -> Result<Vec<serde_json::Value>, DwError> {
+    let state = app.state::<AppState>();
+    let action = crate::input::UniversalAction::from_id(&action).ok_or_else(|| {
+        DwError::new(
+            ErrorCode::InvalidConfig,
+            "That is not a universal control.",
+        )
+        .detail("Use back, home, recents, menu, screenshot or rotate.")
+    })?;
+    let parsed = crate::input::Chord::parse(&chord).ok_or_else(|| {
+        DwError::new(
+            ErrorCode::InvalidConfig,
+            "That is not a keyboard combination.",
+        )
+        .detail("Use something like Shift+A — a modifier plus one key.")
+    })?;
+    state.input.set_universal_binding(action, parsed)?;
+    Ok(universal_list(&state.input))
+}
+
+#[tauri::command]
+pub async fn agent_tool_catalog(app: AppHandle) -> Result<Vec<serde_json::Value>, DwError> {
+    let _ = app;
+    Ok(agent::mcp::descriptors())
+}
+
+/// What needs attention right now. `deep` also captures each live window's
+/// display, which costs two screenshots per window and is therefore only run
+/// when the user asks for a full check.
+#[tauri::command]
+pub async fn attention_report(app: AppHandle, deep: Option<bool>) -> Result<Report, DwError> {
+    let state = app.state::<AppState>();
+    Ok(state.diagnose.report(deep.unwrap_or(false)).await)
+}
+
+/// Run one targeted recovery. The returned report is the state it left behind.
+#[tauri::command]
+pub async fn attention_recover(
+    app: AppHandle,
+    recovery: Recovery,
+) -> Result<RecoveryOutcome, DwError> {
+    let state = app.state::<AppState>();
+    Ok(state.diagnose.recover(&recovery).await)
 }
 
 fn human_size(bytes: u64) -> String {
@@ -459,7 +1269,8 @@ fn human_size(bytes: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::apk_paths_from_args;
+    use super::{apk_paths_from_args, check_touch};
+    use crate::domain::ErrorCode;
 
     #[test]
     fn finds_one_package_among_shell_arguments() {
@@ -500,5 +1311,22 @@ mod tests {
     fn keeps_every_package_when_several_are_requested() {
         let args = ["a.apk", "b.apk"];
         assert_eq!(apk_paths_from_args(args).len(), 2);
+    }
+
+    #[test]
+    fn a_phone_touch_must_be_a_point_on_a_real_display() {
+        // A 1080x2400 capture is the ordinary case, and its last pixel is valid.
+        assert!(check_touch(0, 0).is_ok());
+        assert!(check_touch(1079, 2399).is_ok());
+        // Values a broken converter could produce are refused, not sent to Android.
+        for (x, y) in [(u32::MAX, 0), (0, u32::MAX), (20_000, 20_000)] {
+            let err = check_touch(x, y).unwrap_err();
+            assert_eq!(err.code, ErrorCode::InvalidRequest);
+            assert!(
+                err.summary.contains("not on the phone's screen"),
+                "{}",
+                err.summary
+            );
+        }
     }
 }

@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use tokio::process::{Child, Command};
 
 use super::adb::Adb;
+use super::hardware::HardwarePlan;
 use super::sdk::{self, Sdk};
 use crate::domain::{DwError, DwResult, ErrorCode};
 use crate::proc;
@@ -40,8 +41,21 @@ pub async fn ensure_avd(sdk: &Sdk, cfg: &AvdConfig) -> DwResult<bool> {
         .detail(format!("Expected {}", manager.display())));
     } // A .bat needs cmd.exe; arguments are separate so no shell interpolation happens.
     let mut cmd = Command::new("cmd");
+    // avdmanager is a Java program: the SDK's own JRE has to be visible to it.
+    sdk::apply_java(sdk.root(), cmd.as_std_mut());
+    // Named relative to its directory: `cmd /c` strips the outer quotes of a
+    // quoted command path, which breaks any SDK directory containing a space.
+    if let Some(bin) = manager.parent() {
+        cmd.current_dir(bin);
+    }
+    // `.\` rather than a bare name: cmd only searches the current directory when
+    // `NoDefaultCurrentDirectoryInExePath` is unset, and a quoted full path is
+    // stripped by `cmd /c` when it contains a space.
     cmd.arg("/c")
-        .arg(&manager)
+        .arg(format!(
+            ".\\{}",
+            manager.file_name().unwrap_or_default().to_string_lossy()
+        ))
         .args([
             "create",
             "avd",
@@ -111,10 +125,40 @@ pub async fn ensure_avd(sdk: &Sdk, cfg: &AvdConfig) -> DwResult<bool> {
     }
 }
 
+/// The emulator's argument list. Split out so the hardware plan is testable
+/// without a machine of any particular size.
+pub fn launch_args(cfg: &AvdConfig, plan: &HardwarePlan) -> Vec<String> {
+    vec![
+        "-avd".into(),
+        cfg.name.clone(),
+        "-no-window".into(),
+        // Audio is left on: the emulator plays Android's own output on the
+        // host's sound device, so an app's audio is audible while its window is
+        // open. `-no-audio` was a leftover from the headless proof runs; it
+        // silenced the whole runtime, not just a window.
+        "-no-boot-anim".into(),
+        // `auto` silently produced SwiftShader on this emulator build; the plan
+        // chooses the renderer explicitly so the choice is visible and testable.
+        "-gpu".into(),
+        plan.gpu.as_arg().into(),
+        "-cores".into(),
+        plan.cores.to_string(),
+        "-memory".into(),
+        plan.ram_mb.to_string(),
+        "-no-snapshot".into(),
+        "-netdelay".into(),
+        "none".into(),
+        "-netspeed".into(),
+        "full".into(),
+        "-port".into(),
+        cfg.port.to_string(),
+    ]
+}
+
 /// Start the emulator headless and hand back the child so it can be stopped.
 /// Its stderr goes to `log`: the emulator is chatty, and an unread pipe would
 /// eventually fill and block the VM instead of merely losing diagnostics.
-pub fn spawn(sdk: &Sdk, cfg: &AvdConfig, log: &Path) -> DwResult<Child> {
+pub fn spawn(sdk: &Sdk, cfg: &AvdConfig, log: &Path, plan: &HardwarePlan) -> DwResult<Child> {
     let exe = sdk.emulator();
     if !exe.is_file() {
         return Err(DwError::new(
@@ -124,27 +168,18 @@ pub fn spawn(sdk: &Sdk, cfg: &AvdConfig, log: &Path) -> DwResult<Child> {
         .detail("Install it with sdkmanager \"emulator\""));
     }
     let mut cmd = Command::new(&exe);
-    cmd.args([
-        "-avd",
-        &cfg.name,
-        "-no-window",
-        "-no-audio",
-        "-no-boot-anim",
-        "-gpu",
-        "auto",
-        "-no-snapshot",
-        "-netdelay",
-        "none",
-        "-netspeed",
-        "full",
-        "-port",
-        &cfg.port.to_string(),
-    ])
-    .stdin(Stdio::null())
-    .stdout(Stdio::null())
-    .stderr(emulator_log(log))
-    .kill_on_drop(false);
+    cmd.args(launch_args(cfg, plan))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(emulator_log(log))
+        .kill_on_drop(false);
     proc::no_console_async(&mut cmd);
+    tracing::info!(
+        "starting emulator: {} vCPUs, {} MB, GPU {}",
+        plan.cores,
+        plan.ram_mb,
+        plan.gpu.as_arg()
+    );
 
     let child = cmd.spawn().map_err(|e| {
         DwError::io(
@@ -224,5 +259,66 @@ pub async fn wait_boot(adb: &Adb, serial: &str, budget: Duration) -> DwResult<u3
             .detail(format!("{attempts} probes; last state: {last}")));
         }
         tokio::time::sleep(Duration::from_millis(1000)).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::hardware::{GpuMode, HardwarePlan, PlanMode};
+
+    fn plan(cores: u32, ram_mb: u32, gpu: GpuMode) -> HardwarePlan {
+        HardwarePlan {
+            mode: PlanMode::Auto,
+            cores,
+            ram_mb,
+            gpu,
+            reason: String::new(),
+            preset: None,
+        }
+    }
+
+    fn config() -> AvdConfig {
+        AvdConfig {
+            name: "DroidWin_API36".into(),
+            system_image: "system-images;android-36;google_apis;x86_64".into(),
+            port: 5554,
+        }
+    }
+
+    #[test]
+    fn the_emulator_is_started_with_audio_enabled() {
+        // Android's sound has to leave the emulator to be heard: the flag that
+        // silenced the whole runtime must not come back.
+        let args = launch_args(&config(), &plan(4, 4096, GpuMode::Host));
+        assert!(!args.iter().any(|arg| arg == "-no-audio"));
+    }
+
+    #[test]
+    fn the_hardware_plan_reaches_the_emulator_as_flags() {
+        let args = launch_args(&config(), &plan(6, 4096, GpuMode::Host));
+        let joined = args.join(" ");
+        assert!(joined.contains("-cores 6"));
+        assert!(joined.contains("-memory 4096"));
+        assert!(joined.contains("-gpu host"));
+        // Values stay separate argv entries: no shell parsing, no quoting bug.
+        let gpu_at = args.iter().position(|a| a == "-gpu").unwrap();
+        assert_eq!(args[gpu_at + 1], "host");
+        let cores_at = args.iter().position(|a| a == "-cores").unwrap();
+        assert_eq!(args[cores_at + 1], "6");
+    }
+
+    #[test]
+    fn software_rendering_remains_available_as_a_fallback() {
+        let args = launch_args(&config(), &plan(4, 2048, GpuMode::Software));
+        let gpu_at = args.iter().position(|a| a == "-gpu").unwrap();
+        assert_eq!(args[gpu_at + 1], "swiftshader_indirect");
+    }
+
+    #[test]
+    fn the_emulator_still_runs_headless() {
+        let args = launch_args(&config(), &plan(4, 2048, GpuMode::Host));
+        assert!(args.contains(&"-no-window".to_string()));
+        assert!(args.iter().any(|a| a == "-no-snapshot"));
     }
 }

@@ -1,0 +1,561 @@
+/*
+ * Overlay windows. The label layer is transparent and borderless: the game is
+ * what the user should see, so it paints no background and takes no pointer
+ * events. The control bar and the mapping panel are opaque surfaces of their
+ * own, because a partly transparent composited window leaked the desktop here.
+ */
+
+html.overlay-root,
+html.overlay-root body,
+html.overlay-root #root {
+  background: transparent;
+  overflow: hidden;
+  height: 100%;
+  margin: 0;
+  user-select: none;
+  cursor: default;
+}
+
+/* ---- mapping labels (click-through) ---- */
+
+.labels {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  font-family: var(--font-sans, "Onest", system-ui, sans-serif);
+  color: #f4f6fb;
+}
+
+.labels__field {
+  position: absolute;
+  pointer-events: none;
+}
+
+.labels__chip {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  min-width: 24px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  background: rgba(12, 15, 22, 0.82);
+  border: 1px solid rgba(140, 220, 255, 0.55);
+  color: #dff4ff;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
+}
+
+.labels__chip--off {
+  border-color: rgba(255, 206, 122, 0.5);
+  color: #ffe2ad;
+}
+
+/* ---- click-to-place: the game's own picture is the selection surface ---- */
+
+.labels__place {
+  position: absolute;
+  /* The layer above is click-through; this one is the only part that is not,
+     and only while a point is being chosen. */
+  pointer-events: auto;
+  cursor: crosshair;
+  background: rgba(10, 16, 26, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(140, 220, 255, 0.55);
+}
+
+.labels__place-hint {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(9, 14, 22, 0.9);
+  border: 1px solid rgba(140, 220, 255, 0.45);
+  color: #cfeaff;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.labels__pending {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border: 2px solid #8cdcff;
+  border-radius: 50%;
+  background: rgba(140, 220, 255, 0.4);
+  box-shadow: 0 0 0 7px rgba(140, 220, 255, 0.16);
+}
+
+.labels__toast {
+  position: absolute;
+  left: 50%;
+  bottom: 72px;
+  transform: translateX(-50%);
+  max-width: 70%;
+  padding: 7px 12px;
+  border-radius: 8px;
+  background: rgba(48, 12, 14, 0.9);
+  border: 1px solid rgba(255, 120, 120, 0.5);
+  color: #ffd9d9;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+/* ---- the action rail on the right edge of the app window ---- */
+
+.rail {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: 8px;
+  overflow-y: auto;
+  background: #0b1220;
+  border-left: 1px solid #24324a;
+  color: #dbe3f0;
+  font-family: var(--font-sans, "Onest", system-ui, sans-serif);
+}
+
+.rail__btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 12px 4px;
+  border: 1px solid #24324a;
+  border-radius: 10px;
+  background: #111a2b;
+  color: #dbe3f0;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.rail__btn svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.rail__btn:hover,
+.rail__btn:focus-visible {
+  background: #16233a;
+  border-color: #2d3f5c;
+  outline: none;
+}
+
+.rail__btn:active,
+.rail__btn--busy {
+  background: #1d2f4c;
+  border-color: #3b82f6;
+  color: #ffffff;
+}
+
+.rail__btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.rail__label {
+  font-size: 11px;
+  line-height: 1.15;
+  letter-spacing: 0.01em;
+  color: #a9b8cd;
+  text-align: center;
+}
+
+.rail__item {
+  padding: 10px 8px;
+  border: 1px solid #24324a;
+  border-radius: 8px;
+  background: #111a2b;
+  color: #dbe3f0;
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rail__item:hover,
+.rail__item:focus-visible {
+  background: #16233a;
+  border-color: #2d3f5c;
+  outline: none;
+}
+
+.rail__item--back {
+  color: #9fb0c9;
+}
+
+.rail__note {
+  margin: 2px 0 0;
+  color: #9fb0c9;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.rail__note[role="alert"] {
+  color: #ffb4b4;
+}
+
+/* ---- the key-mapping panel (its own window, docked inside the app) ---- */
+
+.mapper {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-sizing: border-box;
+  padding: 12px;
+  /* The panel is exactly as tall as the window it docks in, and a short window
+     must not hide the "Add a key" field: it scrolls instead. */
+  overflow-y: auto;
+  background: #0b1220;
+  color: #e8edf7;
+  font-family: var(--font-sans, "Onest", system-ui, sans-serif);
+  font-size: 13px;
+}
+
+.mapper__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mapper__eyebrow {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #8ea2bf;
+}
+
+.mapper__title {
+  display: block;
+  margin-top: 2px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.mapper__close {
+  width: 26px;
+  height: 26px;
+  border: 1px solid #24324a;
+  border-radius: 6px;
+  background: transparent;
+  color: #cbd6e6;
+  cursor: pointer;
+}
+
+.mapper__switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #c3cfdf;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* The default checkbox is a white square in the middle of a dark panel, so it
+   is drawn as the rest of the panel is: a dark box that fills in when armed. */
+.mapper__switch input {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 1px solid #2f4a70;
+  border-radius: 4px;
+  background: #0f1828;
+  cursor: pointer;
+}
+
+.mapper__switch input:checked {
+  border-color: #2563eb;
+  background-color: #2563eb;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.6 6.4 11.5 12.5 5' fill='none' stroke='%23ffffff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+.mapper__rows {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 72px;
+  overflow-y: auto;
+}
+
+.mapper__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid #1e2c44;
+  border-radius: 8px;
+  background: #111a2b;
+}
+
+.mapper__key {
+  min-width: 46px;
+  padding: 2px 6px;
+  border: 1px solid #2f4a70;
+  border-radius: 5px;
+  background: #1b2a44;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.mapper__action {
+  flex: 1 1 auto;
+  color: #c7d3e4;
+  font-size: 12px;
+}
+
+.mapper__remove {
+  border: 0;
+  background: transparent;
+  color: #8ea2bf;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mapper__empty {
+  margin: 8px 2px;
+  color: #8ea2bf;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.mapper__add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #1e2c44;
+  border-radius: 10px;
+}
+
+.mapper__add legend {
+  padding: 0 4px;
+  color: #8ea2bf;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.mapper__capture {
+  flex: 1 1 96px;
+  padding: 6px 8px;
+  border: 1px solid #2d3f5c;
+  border-radius: 6px;
+  background: #16233a;
+  color: #e8edf7;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mapper__select,
+.mapper__xy input {
+  padding: 5px 6px;
+  border: 1px solid #24324a;
+  border-radius: 6px;
+  background: #0f1828;
+  color: #e8edf7;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.mapper__section {
+  color: #7f94b3;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.mapper__keys {
+  display: grid;
+  gap: 3px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mapper__keys li {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: #8ea2bf;
+  font-size: 11px;
+}
+
+.mapper__universal-label {
+  margin-right: auto;
+  color: #cfe0f5;
+  font-size: 11px;
+}
+
+.mapper__chord {
+  padding: 2px 7px;
+  border: 1px solid #24324a;
+  border-radius: 4px;
+  background: #0f1828;
+  color: #dbe8f8;
+  font-family: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.mapper__chord:hover {
+  border-color: #4a7fb5;
+}
+
+.mapper__chord--editing {
+  border-color: #8cdcff;
+  color: #dff4ff;
+}
+
+.mapper__chord--fixed {
+  cursor: default;
+}
+
+.mapper__keys kbd {
+  padding: 1px 4px;
+  border: 1px solid #24324a;
+  border-radius: 4px;
+  background: #0f1828;
+  color: #dbe8f8;
+  font-family: inherit;
+  font-size: 10px;
+}
+
+.mapper__universal {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid #1d2b40;
+  border-radius: 8px;
+  background: #0b1420;
+}
+
+.mapper__place {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 100%;
+}
+
+.mapper__place-btn {
+  align-self: flex-start;
+  padding: 6px 11px;
+  border: 1px solid #2f4a70;
+  border-radius: 6px;
+  background: #101c2e;
+  color: #bfe6ff;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mapper__place-btn:hover {
+  border-color: #4a7fb5;
+  background: #13243a;
+}
+
+.mapper__point {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #cfeaff;
+  font-size: 11px;
+}
+
+.mapper__point-clear {
+  padding: 0 3px;
+  border: 0;
+  background: transparent;
+  color: #8ea2bf;
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.mapper__point-clear:hover {
+  color: #ffb4b4;
+}
+
+.mapper__place-label {
+  color: #8ea2bf;
+  font-size: 11px;
+}
+
+.mapper__add-key {
+  margin-left: auto;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: #2563eb;
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mapper__add-key:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.mapper__foot {
+  display: flex;
+  gap: 8px;
+}
+
+.mapper__reset {
+  padding: 7px 10px;
+  border: 1px solid #2d3f5c;
+  border-radius: 6px;
+  background: #16233a;
+  color: #cbd6e6;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mapper__done {
+  flex: 1 1 auto;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: #2563eb;
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mapper__error {
+  margin: 0;
+  color: #ffb4b4;
+  font-size: 12px;
+}

@@ -116,6 +116,48 @@ Record important decisions in reverse chronological order. Do not erase rejected
 - Evidence: proof runs in both directions (`terminated emulator process tree …` versus `leaving it running`), followed by no qemu/emulator/scrcpy/droidwin process and an empty `adb devices`.
 - Consequences: stopping the runtime is explicit per session; the UI shows the boot honestly. A force kill cannot run the handler, so a killed process may leave the emulator for the next launch to reconcile.
 
+## D-014 — Display geometry comes from the app's declared orientation, sized in dp
+- Status: Accepted, verified on this machine
+- Date: 2026-10-26
+- Decision: One policy (`src-tauri/src/runtime/display.rs`) creates the Android surface an app window is drawn on: 411×914 dp at 420 dpi, i.e. 1080×2400 px portrait or 2400×1080 px landscape, with the window at the same aspect ratio (420×933 or 933×420). The orientation comes from `android:screenOrientation` on the launchable activity (application-level fallback), read by the existing AXML reader and cached per package.
+- Context: Every display was created 540×1170 at 420 dpi — 205×445 dp, less than half a phone. A landscape-locked app (Block'Buster) forced Android to rotate that surface to 1170×540, and its layout was taller than 205 dp, so its own content was clipped (the Start button, the score column). The portrait window then showed a landscape stream inside a portrait frame. Measured: `init=540x1170 … cur=1170x540` on display 2 while the app was focused.
+- Alternatives: Keep one size and let the user pick per app (more UI, still needs the same numbers); scale the window to crop (hides the defect and breaks input coordinates); use the device's 1080×2400 for every app including landscape (defeats the point).
+- Evidence: `screenshots/geometry-before-blockbuster-display.png` (content clipped inside a 1170×540 surface) against `screenshots/geometry-after-blockbuster-window.png` and `screenshots/geometry-after-blockbuster-playing.png` (full layout, game started and scored via a display-scoped tap). Accelerace keeps a portrait surface (`geometry-after-accelerace-window.png`). Reproduce with `cargo run --example geometry_proof -- <apk>…`.
+- Consequences: A virtual display costs ~10 MB of framebuffer at 1080p instead of ~2.5 MB at 540×1170. `EmulatorRuntime::geometry_of(package)` is the single source of truth for turning window coordinates into display coordinates (keyboard/touch mapping, MCP taps, screenshot sizing). Apps whose manifest locks no orientation get a portrait surface, and the orientation Android actually composed is recorded for the next launch.
+- Follow-up tasks: DW-046 closed; DW-045 (blank-render detection) still open.
+
+## D-015 — Keyboard mapping is a low-level hook in front of scrcpy, dispatched as adb input
+- Status: Accepted, verified on this machine
+- Date: 2026-10-26
+- Decision: DroidWin installs one `WH_KEYBOARD_LL` hook for the process. It resolves the foreground window's process to an app package (`package_for_pid`), looks up that package's enabled mappings, and swallows a key only when one matches. A swallowed key becomes a display-scoped `adb shell input` (`keyevent`, `tap`, or `motionevent DOWN/UP`), never a second keyboard path. Ctrl/Alt/Win combinations always pass through; Shift does not block a mapping, because it is ordinary typing and a common game control.
+- Context: scrcpy owns the app window and forwards the keyboard itself. Mapping inside DroidWin's own webview would never see those keys, and forwarding them a second time after scrcpy already had them would double-fire input. A hook is the only place that sees a key before scrcpy does, and returning `1` from it is the honest way to say "this key is mine now".
+- Alternatives: scrcpy's `--no-keyboard` plus re-implementing all typing (throws away text entry); an injected keystroke through `SendInput` after interception (same duplicate problem, plus it would re-enter our own hook); asking the user to run DroidWin elevated and reading raw input (more privilege than the feature needs).
+- Evidence: `screenshots/input-01-start-screen.png` … `input-04-mapping-off-key-inert.png`; the hook log shows `key 0x4A in org.asafonov.blockbuster: mapped to tap 50% / 80% (down)` for the mapped press and `not mapped, passed to the window` with mapping off, while the game started in the first case and stayed on its start screen in the second.
+- Consequences: mapping is per package, not global; it is off until the user enables it; a key held while focus leaves, the window closes, or the profile is disabled is released (`release_package`), so a finger cannot stay pressed on a game. The dispatcher serialises adb calls on one queue, so a release can never overtake its press.
+- Follow-up tasks: DW-055 records the panel and its tests.
+
+## D-016 — Triggers compose existing tools; every step reports dispatched, observed and verified
+- Status: Accepted, verified on this machine
+- Date: 2026-10-26
+- Decision: A trigger is a name, one watched subject (one package, or the runtime), a condition and a list of steps. A step is a tool name plus arguments plus an optional expectation. Steps run through `ControlService::dispatch`, the same path a single tool call takes. Each step result carries `dispatched`, an `observation` (app running, window open, display id, and — when the expectation is a comparison — the screenshot hash), and `verified` with a one-line reason. Triggers and the workflow runner live in the agent layer, not the Android action layer, because they compose actions rather than perform them.
+- Context: Step 1–3 gave DroidWin display-scoped control and keyboard mapping, but an agent could only do one thing at a time and had no way to know whether a tap had any effect. Adding a second action layer or a second MCP server would have duplicated the 25 tools that already worked.
+- Alternatives: A generic automation DSL (more surface, no new capability); trigger actions that call MCP over HTTP back into the same process (a loop through the network to reach a local function); per-action verification inside every existing tool (changes 25 tool results and couples them to package state).
+- Detection: `RuntimeEvents::app_event` carries what DroidWin observes about its own window host — Opened when the display was resolved, Closed when it exits or its process disappears, Crashed only when the host exits with a failure code it was not asked for. `close_window` sets a shared `closing` flag first, so a requested close is never reported as a crash. State triggers poll the display they name at their own interval with edge detection; a runtime trigger watches a Ready → stopped/unhealthy transition. Nothing infers app state from a picture or a timer.
+- Lifecycle: the engine starts with the endpoint and stops with it, aborting in-flight fires, so switching automation off leaves no worker. Firing is single-flight per trigger; cancellation flows through the same `Cancel` token the MCP request owns.
+- Evidence: `screenshots/mcp-01-workflow-tap-started-game.png`, `screenshots/mcp-02-trigger-fired-on-open.png`, `.droidwin/mcp-proof.log` (5/5 steps verified; trigger fired on `app_opened` with `fire_count=1`; 60 s wait cancelled in 2.28 s; dropped connection left the endpoint healthy; `windows=0`, `scrcpy=0`, adb unchanged after teardown).
+- Consequences: triggers persist in schema v5 and survive a restart, but their steps are only as capable as the tools that already exist. A verification that is merely "the screen changed" says the pixels moved, not that the change was the intended one; the result says so in `verify_detail`.
+- Follow-up tasks: DW-056 records the surface; a trigger UI and a live-fire entry in the Agent screen are not built yet.
+
+### D-017 — A recorded failure is history, re-checked before it is reported
+- Status: Accepted, verified on this machine
+- Date: 2026-10-26
+- Decision: The operation history is evidence of what happened, never a claim about what is true now. A failed launch or install problem keeps the record's own sentence, prefixes it with the time it was recorded, and adds what a fresh look at the app list says today ("Re-checked now: … is installed (1.61.0) and has no window open", or "still not installed", or "no app list to check against"). The age is part of the title, so a nine-hour-old failure cannot read as a failure happening now.
+- Context: The section reported `The last launch of com.fingersoft.hillclimb failed` with the recorded sentence `com.fingersoft.hillclimb is not installed in the runtime` as a present-tense, confirmed observation, while the Applications screen one click away listed that package as installed. The badge said confirmed and the sentence was no longer true: exactly the guess-as-fact the section exists to prevent.
+- Alternatives: Drop old failures (loses a real, actionable retry); demote them to suspected (they are not suspected — they are recorded facts); re-probe the package over adb on every report (a device round trip per package, which is the polling this pass removed). The app list DroidWin already caches answers the question for free.
+- Rule: a diagnosis may only state as fact what was measured now; anything remembered is labelled with when it was recorded and what has changed since.
+- Evidence: Runtime screen with a live lost window and the stale record showing its age (`screenshots/attention-01-lost-window.png`); the report JSON carries `Recorded 9 h ago: … Re-checked now: com.fingersoft.hillclimb is installed (1.61.0) and has no window open.`
+- Consequences: the section can now say "this failed then, here is the state now", which is what makes a retry offer honest.
+
 ## New decision template
 
 ### D-XXX — Short title

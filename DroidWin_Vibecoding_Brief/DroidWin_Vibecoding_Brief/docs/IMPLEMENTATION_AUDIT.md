@@ -169,9 +169,10 @@ suite, so `cargo test` stays hermetic and fast.
 
 ## 5. Remaining work, in priority order
 
-1. **Per-app display geometry.** Block'Buster's fixed-width landscape layout is clipped; the launch
-   path always creates a 540×1170 portrait display. Reading `screenOrientation` from the manifest and
-   choosing display geometry (or letting the user pick) would fix the common landscape-game case.
+1. ~~**Per-app display geometry** (DW-046)~~ — done. The launch path reads `android:screenOrientation`
+   from the launchable activity and creates a 1080×2400 or 2400×1080 surface at 420 dpi (411×914 dp)
+   with a window at the same aspect ratio. Block'Buster renders and plays; evidence in
+   `screenshots/geometry-*.png`.
 2. **Detect a blank virtual display.** The supplied 2012-era app launches on display 3, is focused,
    owns a surface — and scrcpy renders black, while the same app mirrored from display 0 works. A
    launch currently counts as successful on process/display facts alone. Needs a rendering probe,

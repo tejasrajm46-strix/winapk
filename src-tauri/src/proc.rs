@@ -34,6 +34,58 @@ pub fn no_console_async(cmd: &mut tokio::process::Command) {
     no_console(cmd.as_std_mut());
 }
 
+/// The executable name of a running process, e.g. `emulator.exe`.
+///
+/// Used to confirm that a process id DroidWin wrote to disk is still the
+/// emulator it started, and not a recycled id belonging to something else. A
+/// process DroidWin may not open answers `None`, which callers must treat as
+/// "not ours".
+#[cfg(windows)]
+pub fn image_name(pid: u32) -> Option<String> {
+    use std::os::windows::ffi::OsStringExt;
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        // Signatures match the declarations already used for process stats, so
+        // the linker sees one import rather than two spellings of it.
+        fn OpenProcess(access: u32, inherit: i32, pid: u32) -> isize;
+        fn CloseHandle(handle: isize) -> i32;
+        fn QueryFullProcessImageNameW(
+            handle: isize,
+            flags: u32,
+            buffer: *mut u16,
+            size: *mut u32,
+        ) -> i32;
+    }
+
+    const QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+    let handle = unsafe { OpenProcess(QUERY_LIMITED_INFORMATION, 0, pid) };
+    if handle == 0 {
+        return None;
+    }
+    let mut buffer = [0u16; 1024];
+    let mut size = buffer.len() as u32;
+    let ok = unsafe { QueryFullProcessImageNameW(handle, 0, buffer.as_mut_ptr(), &mut size) };
+    unsafe {
+        CloseHandle(handle);
+    }
+    if ok == 0 {
+        return None;
+    }
+    let path = std::ffi::OsString::from_wide(&buffer[..size as usize]);
+    Some(
+        std::path::Path::new(&path)
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_default(),
+    )
+}
+
+#[cfg(not(windows))]
+pub fn image_name(_pid: u32) -> Option<String> {
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -41,6 +93,15 @@ mod tests {
 
     /// The flag must not change how a child behaves: output and exit status are
     /// still captured. This is the property the whole policy depends on.
+    #[cfg(windows)]
+    #[test]
+    fn a_process_reports_the_executable_it_runs_and_a_bad_id_reports_nothing() {
+        let name = image_name(std::process::id()).expect("the test process is its own proof");
+        assert!(name.to_ascii_lowercase().ends_with(".exe"), "{name}");
+        // An id that cannot be a live process (Windows ids are below 2^24).
+        assert!(image_name(u32::MAX).is_none());
+    }
+
     #[cfg(windows)]
     #[test]
     fn a_hidden_child_still_reports_output_and_exit_code() {

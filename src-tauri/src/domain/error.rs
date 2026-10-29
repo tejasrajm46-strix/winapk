@@ -12,6 +12,16 @@ pub enum ErrorCode {
     CorruptArchive,
     MissingManifest,
     UnsupportedPackage,
+    /// A requested setting is outside what this backend supports.
+    InvalidConfig,
+    /// The request itself is malformed: a missing argument or unknown tool.
+    InvalidRequest,
+    /// The capability exists but this runtime cannot provide it.
+    NotSupported,
+    /// The agent asked for something the current permission level forbids.
+    PermissionDenied,
+    /// A person paused agent control at the desktop.
+    AutomationPaused,
     RuntimeNotConfigured,
     RuntimeUnavailable,
     RuntimeStartFailed,
@@ -34,6 +44,11 @@ impl ErrorCode {
             ErrorCode::CorruptArchive => "corrupt_archive",
             ErrorCode::MissingManifest => "missing_manifest",
             ErrorCode::UnsupportedPackage => "unsupported_package",
+            ErrorCode::InvalidConfig => "invalid_config",
+            ErrorCode::InvalidRequest => "invalid_request",
+            ErrorCode::NotSupported => "not_supported",
+            ErrorCode::PermissionDenied => "permission_denied",
+            ErrorCode::AutomationPaused => "automation_paused",
             ErrorCode::RuntimeNotConfigured => "runtime_not_configured",
             ErrorCode::RuntimeUnavailable => "runtime_unavailable",
             ErrorCode::RuntimeStartFailed => "runtime_start_failed",

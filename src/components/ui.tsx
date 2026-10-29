@@ -5,7 +5,7 @@
 
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import type { DwError } from "../backend";
-import { IconAlert, IconCheck, IconClose } from "./icons";
+import { IconAlert, IconClose } from "./icons";
 
 export type Tone = "ok" | "warn" | "error" | "idle" | "accent";
 
@@ -150,18 +150,6 @@ export function ErrorNote({ error }: { error: DwError }) {
           <pre className="note__detail">{error.detail}</pre>
         </details>
       )}
-    </div>
-  );
-}
-
-export function InfoNote({ title, children }: { title: string; children?: ReactNode }) {
-  return (
-    <div className="note note--info">
-      <div className="note__head">
-        <IconCheck size={14} />
-        <span>{title}</span>
-      </div>
-      {children && <div className="note__body">{children}</div>}
     </div>
   );
 }

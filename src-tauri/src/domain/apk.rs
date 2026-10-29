@@ -3,6 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::app::AppOrientation;
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SignatureInfo {
     /// A v1 (JAR) signature block was present.
@@ -27,6 +29,9 @@ pub struct ApkInspection {
     pub version_code: Option<u64>,
     pub min_sdk: Option<u32>,
     pub target_sdk: Option<u32>,
+    /// Orientation the launchable activity locks itself to. `None` when the
+    /// manifest does not declare one — not the same thing as unknown forever.
+    pub orientation: Option<AppOrientation>,
     /// CPU ABIs that ship native libraries in this archive.
     pub abis: Vec<String>,
     pub size_bytes: u64,

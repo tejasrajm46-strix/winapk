@@ -1,14 +1,28 @@
 import { useEffect, useMemo, useState } from "react";
 import type { InstalledApp } from "../backend";
-import { IconInstall, IconRefresh, IconSearch } from "../components/icons";
+import { IconGrid, IconInstall, IconList, IconRefresh, IconSearch } from "../components/icons";
 import { Button, EmptyState, ErrorNote, Panel, StatusPill } from "../components/ui";
+import { ControlsDialog } from "../components/ControlsDialog";
 import { UninstallDialog } from "../components/UninstallDialog";
-import { AppRow, PageHead, type ScreenProps } from "./common";
+import { AppCard, AppRow, PageHead, SkeletonRows, type ScreenProps } from "./common";
+
+type View = "list" | "grid";
+
+function initialView(): View {
+  try {
+    return window.localStorage.getItem("droidwin.appView") === "grid" ? "grid" : "list";
+  } catch {
+    return "list";
+  }
+}
 
 export function Applications(props: ScreenProps) {
-  const { apps, appsError, busy, status } = props;
-  const [query, setQuery] = useState("");
+  const { apps, appsError, busy, status, appQuery, onAppQueryChange } = props;
+  const [view, setView] = useState<View>(initialView);
   const [pending, setPending] = useState<InstalledApp | null>(null);
+  // Controls is opened per app and never rendered otherwise: mapping is off by
+  // default and the panel is the only place it can be turned on.
+  const [controls, setControls] = useState<InstalledApp | null>(null);
 
   // If the package leaves the runtime while the dialog is open (another window,
   // or a refresh), the question no longer applies.
@@ -20,15 +34,24 @@ export function Applications(props: ScreenProps) {
 
   const filtered = useMemo(() => {
     if (!apps) return [];
-    const q = query.trim().toLowerCase();
+    const q = appQuery.trim().toLowerCase();
     if (!q) return apps;
     return apps.filter(
       (app) =>
         app.package_id.toLowerCase().includes(q) || (app.label ?? "").toLowerCase().includes(q),
     );
-  }, [apps, query]);
+  }, [apps, appQuery]);
 
   const running = apps?.filter((app) => app.running).length ?? 0;
+
+  const chooseView = (next: View) => {
+    setView(next);
+    try {
+      window.localStorage.setItem("droidwin.appView", next);
+    } catch {
+      /* a view preference is not worth an error */
+    }
+  };
 
   return (
     <div className="page">
@@ -55,28 +78,60 @@ export function Applications(props: ScreenProps) {
         action={
           <div className="inline">
             {running > 0 && <StatusPill tone="accent" label={`${running} running`} />}
-            <span className="panel__note">
-              {apps === null ? "…" : `${filtered.length} of ${apps.length}`}
+            <span className="panel__note" aria-live="polite">
+              {apps === null
+                ? appsError
+                  ? "Unavailable"
+                  : "Reading…"
+                : `${filtered.length} of ${apps.length}`}
             </span>
+            <div className="segmented" role="group" aria-label="Application view">
+              <button
+                type="button"
+                className={`segmented__item${view === "grid" ? " segmented__item--active" : ""}`}
+                aria-pressed={view === "grid"}
+                aria-label="Grid view"
+                title="Grid view"
+                onClick={() => chooseView("grid")}
+              >
+                <IconGrid size={14} />
+              </button>
+              <button
+                type="button"
+                className={`segmented__item${view === "list" ? " segmented__item--active" : ""}`}
+                aria-pressed={view === "list"}
+                aria-label="List view"
+                title="List view"
+                onClick={() => chooseView("list")}
+              >
+                <IconList size={14} />
+              </button>
+            </div>
           </div>
         }
       >
-        <div style={{ padding: "var(--space-md) var(--space-lg)" }}>
+        <div className="toolbar">
           <div className="search">
             <IconSearch size={14} />
             <input
               type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              value={appQuery}
+              onChange={(event) => onAppQueryChange(event.target.value)}
               placeholder="Search by name or package"
-              aria-label="Search installed applications"
+              aria-label="Filter installed applications"
             />
           </div>
         </div>
 
         {appsError ? (
-          <div style={{ padding: "0 var(--space-lg) var(--space-lg)" }}>
-            <ErrorNote error={appsError} />
+          <div className="panel__inset">
+            {appsError.code === props.error?.code ? (
+              <p className="muted">
+                The package list is unavailable until the runtime answers.
+              </p>
+            ) : (
+              <ErrorNote error={appsError} />
+            )}
             {status?.state !== "ready" && (
               <div style={{ marginTop: "var(--space-md)" }}>
                 <Button variant="primary" onClick={props.onStartRuntime} disabled={busy}>
@@ -86,11 +141,11 @@ export function Applications(props: ScreenProps) {
             )}
           </div>
         ) : apps === null ? (
-          <p className="muted" style={{ padding: "0 var(--space-lg) var(--space-lg)" }}>
-            Reading packages from the runtime…
-          </p>
+          <div aria-busy="true" aria-label="Reading packages from the runtime">
+            <SkeletonRows rows={4} />
+          </div>
         ) : filtered.length === 0 ? (
-          <div style={{ padding: "0 var(--space-lg) var(--space-lg)" }}>
+          <div className="panel__inset">
             <EmptyState
               title={apps.length === 0 ? "No apps installed yet" : "No match"}
               body={
@@ -104,13 +159,27 @@ export function Applications(props: ScreenProps) {
                     Choose an APK
                   </Button>
                 ) : (
-                  <Button variant="secondary" onClick={() => setQuery("")}>
+                  <Button variant="secondary" onClick={() => onAppQueryChange("")}>
                     Clear search
                   </Button>
                 )
               }
             />
           </div>
+        ) : view === "grid" ? (
+          <ul className="app-grid">
+            {filtered.map((app) => (
+              <AppCard
+                key={app.package_id}
+                app={app}
+                busy={busy}
+                onLaunch={props.onLaunch}
+                onStopApp={props.onStopApp}
+                onRequestUninstall={setPending}
+                onControls={setControls}
+              />
+            ))}
+          </ul>
         ) : (
           <ul className="rows">
             {filtered.map((app) => (
@@ -122,6 +191,7 @@ export function Applications(props: ScreenProps) {
                 onStopApp={props.onStopApp}
                 onUninstall={props.onUninstall}
                 onRequestUninstall={setPending}
+                onControls={setControls}
               />
             ))}
           </ul>
@@ -138,6 +208,10 @@ export function Applications(props: ScreenProps) {
           Deleting that data is a separate choice and is never made for you.
         </p>
       </div>
+
+      {controls && (
+        <ControlsDialog app={controls} onClose={() => setControls(null)} />
+      )}
 
       {pending && (
         <UninstallDialog

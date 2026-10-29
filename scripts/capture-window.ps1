@@ -12,6 +12,7 @@ Add-Type @"
 using System;
 using System.Runtime.InteropServices;
 public class WinCap {
+    [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int cmd);
@@ -20,6 +21,12 @@ public class WinCap {
     [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
 }
 "@
+
+# Be pixel-aware before reading any rectangle. Without this the process sees
+# DPI-virtualised coordinates while CopyFromScreen reads physical pixels, so the
+# capture is the window's top-left corner only — which once made a fully visible
+# app look clipped on the right.
+[void][WinCap]::SetProcessDPIAware()
 
 $proc = Get-Process | Where-Object {
     $_.MainWindowHandle -ne 0 -and $_.MainWindowTitle -like "*$Match*"

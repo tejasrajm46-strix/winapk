@@ -1,8 +1,8 @@
 import { DropZone } from "../components/DropZone";
-import { IconClock, IconRefresh } from "../components/icons";
+import { IconClock, IconFolder, IconRefresh } from "../components/icons";
 import { Button, EmptyState, ErrorNote, Panel, StatusPill } from "../components/ui";
 import { runtimeTone } from "../components/AppShell";
-import { PageHead, AppRow, type ScreenProps } from "./common";
+import { AppRow, SkeletonRows, type ScreenProps } from "./common";
 
 function relative(ms: number): string {
   const delta = Date.now() - ms;
@@ -19,22 +19,55 @@ export function Overview(props: ScreenProps) {
   const runtime = runtimeTone(status);
   const installed = apps ?? [];
   const preview = installed.slice(0, 4);
+  const running = installed.filter((app) => app.running).length;
 
   return (
     <div className="page">
-      <PageHead
-        eyebrow="Workspace"
-        title="Your Android apps"
-        lede="Install a package, and DroidWin opens the real Android app in a window of its own."
-      >
-        <Button variant="ghost" onClick={props.onRefresh} disabled={busy}>
-          <IconRefresh size={14} />
-          Refresh
-        </Button>
-      </PageHead>
+      <header className="hero">
+        <div className="hero__chips">
+          <StatusPill tone={runtime.tone} label={runtime.label} />
+          <span className="chip">
+            {status?.android_api ? `Android API ${status.android_api}` : "Android not started"}
+          </span>
+          <span className="chip">
+            {apps === null ? "Apps unknown" : `${installed.length} installed`}
+          </span>
+          {running > 0 && (
+            <span className="chip chip--accent">
+              {running} window{running === 1 ? "" : "s"} open
+            </span>
+          )}
+        </div>
+        <div className="hero__row">
+          <div className="hero__copy">
+            <span className="page__eyebrow">Workspace</span>
+            <h1 className="hero__title">Your Android apps</h1>
+            <p className="hero__lede">
+              Install a package, and DroidWin opens the real Android app in a window of its own.
+            </p>
+          </div>
+          <div className="hero__actions">
+            <Button variant="primary" onClick={props.onBrowse} disabled={busy}>
+              <IconFolder size={14} />
+              Browse APK
+            </Button>
+            <Button variant="secondary" onClick={() => props.onNavigate("runtime")}>
+              Runtime details
+            </Button>
+            <Button variant="ghost" onClick={props.onRefresh} disabled={busy}>
+              <IconRefresh size={14} />
+              Refresh
+            </Button>
+          </div>
+        </div>
+      </header>
 
       {props.error && <ErrorNote error={props.error} />}
-      {props.notice && <div className="note note--info">{props.notice}</div>}
+      {props.notice && (
+        <div className="note note--info" role="status">
+          {props.notice}
+        </div>
+      )}
 
       <div className="grid grid--aside">
         <Panel title="Install a package" note="APK files only. Nothing runs during inspection.">
@@ -104,11 +137,17 @@ export function Overview(props: ScreenProps) {
       >
         {appsError ? (
           <div style={{ padding: "var(--space-lg)" }}>
-            <ErrorNote error={appsError} />
+            {appsError.code === props.error?.code ? (
+              <p className="muted">
+                The library is unavailable until the backend answers. Use Refresh to try again.
+              </p>
+            ) : (
+              <ErrorNote error={appsError} />
+            )}
           </div>
         ) : apps === null ? (
-          <div style={{ padding: "var(--space-lg)" }} className="muted">
-            Reading the runtime's package list…
+          <div aria-busy="true" aria-label="Reading the runtime's package list">
+            <SkeletonRows rows={3} />
           </div>
         ) : preview.length === 0 ? (
           <div style={{ padding: "var(--space-lg)" }}>

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { DropZone } from "../components/DropZone";
 import { StageList } from "../components/StageList";
+import { StageProgress } from "../components/StageProgress";
 import { IconAlert, IconFolder, IconInstall, IconPlay } from "../components/icons";
 import { Button, EmptyState, ErrorNote, Field, Panel, StatusPill } from "../components/ui";
 import { PageHead, type ScreenProps } from "./common";
@@ -44,7 +45,30 @@ export function Installer(props: ScreenProps) {
       </PageHead>
 
       {error && <ErrorNote error={error} />}
-      {props.notice && <div className="note note--info">{props.notice}</div>}
+      {props.notice && (
+        <div className="note note--info" role="status">
+          {props.notice}
+        </div>
+      )}
+
+      {props.env?.blocking && props.env.blocking.length > 0 && (
+        <div className="note note--warn">
+          <div className="note__head">
+            <IconAlert size={14} />
+            <span>The runtime is missing pieces, so installing will fail</span>
+          </div>
+          <ul className="note__body" style={{ paddingLeft: 18, margin: 0 }}>
+            {props.env.blocking.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+          <div className="inline">
+            <Button variant="secondary" onClick={() => props.onNavigate("runtime")}>
+              Open runtime details
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid--aside">
         <div className="stack">
@@ -192,6 +216,7 @@ export function Installer(props: ScreenProps) {
 
         <div className="stack">
           <Panel title="Operation" action={opRunning ? <StatusPill tone="warn" label="Running" /> : undefined}>
+            <StageProgress events={stages} running={opRunning} />
             <StageList events={stages} running={opRunning} />
           </Panel>
 

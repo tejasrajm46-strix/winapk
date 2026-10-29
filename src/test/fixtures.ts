@@ -4,6 +4,7 @@
  */
 
 import type {
+  AgentStatus,
   ApkInspection,
   EnvReport,
   InstalledApp,
@@ -41,7 +42,7 @@ export const envReady: EnvReport = {
 };
 
 export const statusNotConfigured: RuntimeStatus = {
-  backend: "Android Emulator (user-provided SDK) + scrcpy",
+  backend: "Android Emulator + scrcpy",
   state: "not_configured",
   detail: "The Android Emulator is not installed: sdkmanager \"emulator\"",
   avd: "DroidWin_API36",
@@ -56,7 +57,7 @@ export const statusNotConfigured: RuntimeStatus = {
     concurrent_apps: false,
     clipboard: true,
     file_drop: true,
-    audio: false,
+    audio: true,
     hardware_accel: false,
   },
   limitations: [
@@ -66,7 +67,7 @@ export const statusNotConfigured: RuntimeStatus = {
 };
 
 export const statusReady: RuntimeStatus = {
-  backend: "Android Emulator (user-provided SDK) + scrcpy",
+  backend: "Android Emulator + scrcpy",
   state: "ready",
   detail: "Android API 36 ready on emulator-5554.",
   avd: "DroidWin_API36",
@@ -81,7 +82,7 @@ export const statusReady: RuntimeStatus = {
     concurrent_apps: true,
     clipboard: false,
     file_drop: false,
-    audio: false,
+    audio: true,
     hardware_accel: true,
   },
   limitations: ["All apps share one Android user, so they are not isolated from each other."],
@@ -165,6 +166,59 @@ export const inspectionOldTarget: ApkInspection = {
   target_sdk: 17,
 };
 
+export const agentRunning: AgentStatus = {
+  running: true,
+  endpoint: "http://127.0.0.1:51234/mcp",
+  token_file: "C:/Users/someone/AppData/Roaming/app.droidwin.desktop/agent/mcp.json",
+  stdio_command: '"C:/DroidWin/droidwin.exe" --mcp-stdio',
+  permission: "control",
+  paused: false,
+  tool_count: 27,
+  actions: [
+    {
+      id: "act-1",
+      at_ms: Date.now() - 4_000,
+      tool: "tap",
+      ok: true,
+      summary: "Tapped 270,170 on display 2",
+      duration_ms: 84,
+      display_id: 2,
+      package_id: "org.fdroid.fdroid",
+    },
+    {
+      id: "act-0",
+      at_ms: Date.now() - 9_000,
+      tool: "type_text",
+      ok: false,
+      summary: "Android rejected that input.",
+      duration_ms: 41,
+      display_id: 2,
+    },
+  ],
+  error_count: 1,
+  skills: [
+    {
+      id: "ui-flow",
+      name: "UI flow",
+      description: "Launch an app and verify its screen.",
+      path: "C:/Users/someone/AppData/Roaming/app.droidwin.desktop/skills/ui-flow",
+      enabled: true,
+      files: 2,
+      bytes: 1200,
+    },
+  ],
+};
+
+export const agentStopped: AgentStatus = {
+  ...agentRunning,
+  running: false,
+  endpoint: null,
+  token_file: null,
+  actions: [],
+  skills: [],
+  error_count: 0,
+};
+
 export function props(overrides: Partial<ScreenProps> = {}): ScreenProps {
   return {
     status: statusReady,
@@ -178,6 +232,8 @@ export function props(overrides: Partial<ScreenProps> = {}): ScreenProps {
     stages: [],
     opRunning: false,
     notice: null,
+    appQuery: "",
+    onAppQueryChange: () => {},
     onNavigate: () => {},
     onRefresh: () => {},
     onStartRuntime: () => {},
@@ -188,6 +244,19 @@ export function props(overrides: Partial<ScreenProps> = {}): ScreenProps {
     onStopApp: () => {},
     onUninstall: () => {},
     onOpenLogs: () => {},
+    attention: null,
+    attentionBusy: false,
+    onAttentionCheck: () => {},
+    onRecover: () => {},
+    agent: agentStopped,
+    onAgentStart: () => {},
+    onAgentStop: () => {},
+    onAgentPause: () => {},
+    onAgentPermission: () => {},
+    onAgentRefresh: () => {},
+    onAgentInstallSkill: () => {},
+    onAgentToggleSkill: () => {},
+    onAgentRemoveSkill: () => {},
     ...overrides,
   };
 }

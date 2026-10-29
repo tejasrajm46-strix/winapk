@@ -1,20 +1,26 @@
-import type { ReactNode } from "react";
-import type { EnvReport, InstalledApp, RuntimeStatus } from "../backend";
+import { useEffect, useRef, type ReactNode } from "react";
+import type { AgentStatus, EnvReport, InstalledApp, RuntimeStatus } from "../backend";
+import mark from "../assets/branding/droidwin-mark.png";
 import {
   IconActivity,
+  IconAgent,
   IconApplications,
   IconInstall,
   IconOverview,
+  IconPhone,
   IconRuntime,
+  IconSearch,
   IconSettings,
 } from "./icons";
 import { StatusPill, type Tone } from "./ui";
 
 export type ScreenId =
+  | "phone"
   | "overview"
   | "applications"
   | "installer"
   | "runtime"
+  | "agent"
   | "activity"
   | "settings";
 
@@ -22,6 +28,7 @@ const NAV: { group: string; items: { id: ScreenId; label: string; icon: ReactNod
   {
     group: "Workspace",
     items: [
+      { id: "phone", label: "Phone", icon: <IconPhone /> },
       { id: "overview", label: "Overview", icon: <IconOverview /> },
       { id: "applications", label: "Applications", icon: <IconApplications /> },
       { id: "installer", label: "Installer", icon: <IconInstall /> },
@@ -31,6 +38,7 @@ const NAV: { group: string; items: { id: ScreenId; label: string; icon: ReactNod
     group: "Management",
     items: [
       { id: "runtime", label: "Runtime", icon: <IconRuntime /> },
+      { id: "agent", label: "Agent", icon: <IconAgent /> },
       { id: "activity", label: "Activity", icon: <IconActivity /> },
       { id: "settings", label: "Settings", icon: <IconSettings /> },
     ],
@@ -54,13 +62,7 @@ export function runtimeTone(status: RuntimeStatus | null): { tone: Tone; label: 
 }
 
 function Mark() {
-  return (
-    <svg className="topbar__mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <rect width="24" height="24" fill="#05070a" />
-      <rect x="4" y="4" width="16" height="11" fill="#e0231c" />
-      <rect x="4" y="18" width="16" height="1.6" fill="#bbcbbd" />
-    </svg>
-  );
+  return <img className="topbar__mark" src={mark} alt="" aria-hidden="true" />;
 }
 
 export function AppShell({
@@ -69,6 +71,9 @@ export function AppShell({
   status,
   env,
   apps,
+  agent,
+  searchValue,
+  onSearch,
   children,
 }: {
   screen: ScreenId;
@@ -76,11 +81,34 @@ export function AppShell({
   status: RuntimeStatus | null;
   env: EnvReport | null;
   apps: InstalledApp[] | null;
+  agent: AgentStatus | null;
+  searchValue: string;
+  onSearch: (value: string) => void;
   children: ReactNode;
 }) {
   const runtime = runtimeTone(status);
+  // Recent evidence, not the endpoint being reachable: an idle endpoint is not
+  // "controlling", and a paused one is not either.
+  const latestAction = agent?.actions[0];
+  const agentActive = Boolean(
+    agent?.running && !agent.paused && latestAction && Date.now() - latestAction.at_ms < 20_000,
+  );
   const running = apps?.filter((app) => app.running).length ?? 0;
   const installed = apps?.length ?? null;
+  const search = useRef<HTMLInputElement>(null);
+
+  // Ctrl+K focuses the one search field, wherever the user is in the app.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        search.current?.focus();
+        search.current?.select();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   return (
     <div className="shell">
@@ -91,8 +119,32 @@ export function AppShell({
         </div>
         <div className="topbar__context">
           <StatusPill tone={runtime.tone} label={runtime.label} />
+          {(agentActive || agent?.paused) && (
+            <StatusPill
+              tone={agent?.paused ? "warn" : "accent"}
+              label={agent?.paused ? "Agent paused" : "Agent acting"}
+            />
+          )}
         </div>
         <div className="topbar__spacer" />
+        <div className="topbar__search">
+          <IconSearch size={14} />
+          <input
+            ref={search}
+            type="search"
+            value={searchValue}
+            onChange={(event) => onSearch(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                onSearch("");
+                event.currentTarget.blur();
+              }
+            }}
+            placeholder="Search apps"
+            aria-label="Search installed applications"
+          />
+          <kbd className="topbar__kbd">Ctrl K</kbd>
+        </div>
         <div className="topbar__env" title={env?.sdk_root ?? undefined}>
           {env?.sdk_root ? `SDK ${env.sdk_root}` : "No Android SDK detected"}
         </div>
@@ -137,7 +189,7 @@ export function AppShell({
           {installed === null ? "Apps unknown" : `${installed} app${installed === 1 ? "" : "s"}`}
         </span>
         <span className="statusbar__item">
-          {running} window{running === 1 ? "" : "s"} open
+          {`${running} window${running === 1 ? "" : "s"} open`}
         </span>
         <span className="statusbar__spacer" />
         <span className="statusbar__item">{status?.avd ?? "No AVD"}</span>

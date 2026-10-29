@@ -1,4 +1,5 @@
 import { runtimeTone } from "../components/AppShell";
+import { AttentionPanel } from "../components/Attention";
 import { IconAlert, IconFolder, IconPlay, IconRefresh, IconStop } from "../components/icons";
 import { Button, ErrorNote, Field, Panel, StatusPill } from "../components/ui";
 import { PageHead, type ScreenProps } from "./common";
@@ -12,7 +13,7 @@ const CAPABILITY_LABELS: { key: keyof NonNullable<ScreenProps["status"]>["capabi
   { key: "concurrent_apps", label: "Several apps at once" },
   { key: "clipboard", label: "Clipboard between host and app" },
   { key: "file_drop", label: "Drop files onto an app window" },
-  { key: "audio", label: "Audio forwarding" },
+  { key: "audio", label: "Android audio output" },
   { key: "hardware_accel", label: "Hardware acceleration" },
 ];
 
@@ -50,6 +51,13 @@ export function RuntimeScreen(props: ScreenProps) {
 
       {props.error && <ErrorNote error={props.error} />}
 
+      <AttentionPanel
+        report={props.attention}
+        busy={props.attentionBusy}
+        onCheck={props.onAttentionCheck}
+        onRecover={props.onRecover}
+      />
+
       <div className="grid grid--aside">
         <Panel title="Backend" action={<StatusPill tone={runtime.tone} label={runtime.label} />}>
           <p className="secondary">{status?.detail ?? "Not probed yet."}</p>
@@ -81,31 +89,29 @@ export function RuntimeScreen(props: ScreenProps) {
                 <span>Setup needed</span>
               </div>
               <p className="note__body">
-                DroidWin uses an Android SDK you install yourself — it does not redistribute Google's
-                emulator. Install the missing packages with the SDK manager, then re-probe.
+                No Android SDK was found. Google's emulator is not redistributed with DroidWin; the
+                setup screen downloads it once, after you accept the SDK licence terms.
               </p>
             </div>
           )}
         </Panel>
 
         <Panel title="Capabilities" note="Only what was verified on this machine is marked supported.">
-          <dl className="fields">
+          <div className="capability-grid">
             {CAPABILITY_LABELS.map(({ key, label }) => {
               const supported = status?.capabilities?.[key] ?? false;
               return (
-                <div className="field" key={key}>
-                  <dt className="field__key">{label}</dt>
-                  <dd className="field__value">
-                    {supported ? (
-                      <StatusPill tone="ok" label="Supported" />
-                    ) : (
-                      <StatusPill tone="idle" label="Not verified" />
-                    )}
-                  </dd>
+                <div className={`capability${supported ? " capability--on" : ""}`} key={key}>
+                  <span className="capability__label">{label}</span>
+                  {supported ? (
+                    <StatusPill tone="ok" label="Supported" />
+                  ) : (
+                    <StatusPill tone="idle" label="Not verified" />
+                  )}
                 </div>
               );
             })}
-          </dl>
+          </div>
         </Panel>
       </div>
 

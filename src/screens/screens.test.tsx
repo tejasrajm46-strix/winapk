@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 
 import { Applications } from "./Applications";
@@ -87,6 +87,28 @@ describe("Installer", () => {
 });
 
 describe("Applications", () => {
+  beforeEach(() => window.localStorage.clear());
+
+  it("filters from the shared search value", () => {
+    render(
+      <Applications
+        {...props({ apps: [appRunning, appWithoutLabel], appQuery: "fdroid" })}
+      />,
+    );
+    expect(screen.getByText("F-Droid")).toBeTruthy();
+    expect(screen.queryByText("com.example.unlabelled")).toBeNull();
+  });
+
+  it("switches to cards without losing the app actions", () => {
+    render(<Applications {...props()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Grid view" }));
+    expect(screen.getByRole("button", { name: "List view" }).getAttribute("aria-pressed")).toBe(
+      "false",
+    );
+    expect(screen.getByRole("button", { name: "Uninstall F-Droid" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Stop$/ })).toBeTruthy();
+  });
+
   it("shows the package id and says the name is unresolved", () => {
     render(<Applications {...props({ apps: [appWithoutLabel] })} />);
     expect(screen.getAllByText("com.example.unlabelled").length).toBeGreaterThan(0);
@@ -120,9 +142,10 @@ describe("Applications", () => {
 describe("Runtime", () => {
   it("marks only verified capabilities as supported", () => {
     render(<RuntimeScreen {...props()} />);
-    // clipboard, file drop and audio are not verified in this build.
-    expect(screen.getAllByText(/Not verified/).length).toBe(3);
-    expect(screen.getAllByText(/Supported/).length).toBe(7);
+    // clipboard and file drop are not verified in this build; audio is the
+    // emulator's own output, not scrcpy's forwarding.
+    expect(screen.getAllByText(/Not verified/).length).toBe(2);
+    expect(screen.getAllByText(/Supported/).length).toBe(8);
   });
 
   it("surfaces the environment's blocking items", () => {

@@ -8,7 +8,10 @@ pub mod operation;
 pub mod runtime;
 
 pub use apk::{ApkInspection, SignatureInfo};
-pub use app::{AppWindow, InstalledApp};
+pub use app::{AppOrientation, AppWindow, InstalledApp};
 pub use error::{DwError, DwResult, ErrorCode};
 pub use operation::{now_ms, Stage, StageEvent, StageSink};
-pub use runtime::{Capabilities, EnvReport, RuntimeState, RuntimeStatus};
+pub use runtime::{
+    Capabilities, EnvReport, PhoneScreen, RuntimeState, RuntimeStatus, SetupComponent,
+    SetupProgress, SetupReport, SetupState,
+};

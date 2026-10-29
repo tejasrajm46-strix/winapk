@@ -17,6 +17,49 @@ const TYPE_INT_HEX: u8 = 0x11;
 
 const NO_ENTRY: u32 = 0xFFFF_FFFF;
 
+/// The manifest's `android:screenOrientation` declaration, reduced to the two
+/// answers a display surface can be built from.
+///
+/// Android's enum has fifteen values. `sensor`, `user`, `fullSensor`, `behind`
+/// and `nosensor` let the activity handle both orientations, so they are `None`:
+/// claiming one of them would be inventing a constraint the app did not declare.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScreenOrientation {
+    Portrait,
+    Landscape,
+}
+
+impl ScreenOrientation {
+    /// `android:screenOrientation` as an enum value (0 = landscape, 1 = portrait,
+    /// 6/8/11 = landscape variants, 7/9/12 = portrait variants).
+    pub fn from_enum(value: u32) -> Option<Self> {
+        match value {
+            0 | 6 | 8 | 11 => Some(ScreenOrientation::Landscape),
+            1 | 7 | 9 | 12 => Some(ScreenOrientation::Portrait),
+            _ => None,
+        }
+    }
+
+    fn from_name(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "landscape" | "sensorlandscape" | "reverselandscape" | "userlandscape" => {
+                Some(ScreenOrientation::Landscape)
+            }
+            "portrait" | "sensorportrait" | "reverseportrait" | "userportrait" => {
+                Some(ScreenOrientation::Portrait)
+            }
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ScreenOrientation::Portrait => "portrait",
+            ScreenOrientation::Landscape => "landscape",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ManifestAttrs {
     pub package: Option<String>,
@@ -27,6 +70,34 @@ pub struct ManifestAttrs {
     /// A literal `android:label`. Resource references are reported separately.
     pub label: Option<String>,
     pub label_is_reference: bool,
+    /// Set on a split APK (`split="config.x86_64"`), absent on the base.
+    pub split: Option<String>,
+    /// The orientation the app is drawn in: the launchable activity's
+    /// declaration first, then the application's. `None` when neither locks one.
+    pub orientation: Option<ScreenOrientation>,
+    /// The launchable activity's class name, when the manifest names one. Shown
+    /// as evidence for the orientation that was chosen.
+    pub launcher_activity: Option<String>,
+}
+
+/// One `<activity>`/`<service>`/`<receiver>`/`<provider>` element as it is read.
+/// Child elements (`intent-filter`, `action`, `category`) belong to the last one
+/// seen, which is how a launcher activity is identified without a full tree.
+#[derive(Default)]
+struct Container {
+    name: Option<String>,
+    orientation: Option<ScreenOrientation>,
+    has_main_action: bool,
+    has_launcher_category: bool,
+    is_activity: bool,
+}
+
+/// Everything a single element's attributes can add to.
+#[derive(Default)]
+struct ManifestState {
+    attrs: ManifestAttrs,
+    containers: Vec<Container>,
+    application_orientation: Option<ScreenOrientation>,
 }
 
 struct Buf<'a>(&'a [u8]);
@@ -79,7 +150,7 @@ pub fn parse_manifest(bytes: &[u8]) -> Result<ManifestAttrs, String> {
     }
 
     let mut strings: Vec<Option<String>> = Vec::new();
-    let mut out = ManifestAttrs::default();
+    let mut state = ManifestState::default();
 
     let mut pos = root_header;
     while pos + 8 <= root_size {
@@ -99,14 +170,37 @@ pub fn parse_manifest(bytes: &[u8]) -> Result<ManifestAttrs, String> {
                 strings = read_string_pool(&buf, pos, header_size, chunk_size)?;
             }
             RES_XML_START_ELEMENT => {
-                read_element(&buf, pos, header_size, chunk_size, &strings, &mut out)?;
+                read_element(&buf, pos, header_size, chunk_size, &strings, &mut state)?;
             }
             _ => {}
         }
         pos += chunk_size;
     }
 
+    // The activity Android starts from the launcher is the one whose orientation
+    // matters for the surface an app window is drawn on. The application-level
+    // declaration is the documented fallback.
+    let mut out = state.attrs;
+    if let Some(launcher) = state
+        .containers
+        .iter()
+        .find(|c| c.is_activity && c.has_main_action && c.has_launcher_category)
+    {
+        out.launcher_activity = launcher.name.clone();
+        out.orientation = launcher.orientation;
+    }
+    if out.orientation.is_none() {
+        out.orientation = state.application_orientation;
+    }
+
     Ok(out)
+}
+
+fn is_container(element: &str) -> bool {
+    matches!(
+        element,
+        "activity" | "activity-alias" | "service" | "receiver" | "provider"
+    )
 }
 
 fn read_string_pool(
@@ -196,7 +290,7 @@ fn read_element(
     header_size: usize,
     _chunk_size: usize,
     strings: &[Option<String>],
-    out: &mut ManifestAttrs,
+    state: &mut ManifestState,
 ) -> Result<(), String> {
     let name_atom = buf.u32(start + 20)?;
     let attr_start = buf.u16(start + 24)? as usize;
@@ -209,6 +303,16 @@ fn read_element(
     if attr_count == 0 || attr_size < 20 {
         return Ok(());
     }
+
+    if is_container(&element) {
+        state.containers.push(Container {
+            is_activity: matches!(element.as_str(), "activity" | "activity-alias"),
+            ..Container::default()
+        });
+    }
+    let out = &mut state.attrs;
+    let containers = &mut state.containers;
+    let application_orientation = &mut state.application_orientation;
 
     let attrs_base = start
         .checked_add(header_size)
@@ -229,6 +333,7 @@ fn read_element(
             ("manifest", "package") => out.package = value.as_string(),
             ("manifest", "versionName") => out.version_name = value.as_string(),
             ("manifest", "versionCode") => out.version_code = value.as_u32().map(u64::from),
+            ("manifest", "split") => out.split = value.as_string(),
             ("uses-sdk", "minSdkVersion") => out.min_sdk = value.as_sdk(),
             ("uses-sdk", "targetSdkVersion") => out.target_sdk = value.as_sdk(),
             ("application", "label") => match value {
@@ -236,6 +341,39 @@ fn read_element(
                 Value::Reference => out.label_is_reference = true,
                 _ => {}
             },
+            ("application", "screenOrientation") => {
+                if let Some(orientation) = value.as_orientation() {
+                    *application_orientation = Some(orientation);
+                }
+            }
+            ("action", "name") => {
+                if value.as_string().as_deref() == Some("android.intent.action.MAIN") {
+                    if let Some(container) = containers.last_mut() {
+                        container.has_main_action = true;
+                    }
+                }
+            }
+            ("category", "name") => {
+                if value.as_string().as_deref() == Some("android.intent.category.LAUNCHER") {
+                    if let Some(container) = containers.last_mut() {
+                        container.has_launcher_category = true;
+                    }
+                }
+            }
+            (_, "screenOrientation") => {
+                if let Some(orientation) = value.as_orientation() {
+                    if let Some(container) = containers.last_mut() {
+                        container.orientation = Some(orientation);
+                    }
+                }
+            }
+            (_, "name") => {
+                if let Some(name) = value.as_string() {
+                    if let Some(container) = containers.last_mut() {
+                        container.name = Some(name);
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -293,6 +431,16 @@ impl Value {
     /// `minSdkVersion` / `targetSdkVersion` may be an int or a codename string.
     fn as_sdk(&self) -> Option<u32> {
         self.as_u32()
+    }
+
+    /// `screenOrientation` is an enum (an int), but a hand-written manifest can
+    /// name it as text; both forms are read the same way.
+    fn as_orientation(&self) -> Option<ScreenOrientation> {
+        match self {
+            Value::Int(value) => ScreenOrientation::from_enum(*value),
+            Value::Str(name) => ScreenOrientation::from_name(name),
+            _ => None,
+        }
     }
 }
 
@@ -532,5 +680,125 @@ mod tests {
     fn empty_manifest_yields_no_fields() {
         let parsed = parse_manifest(&wrap(Vec::new())).expect("empty root parses");
         assert_eq!(parsed, ManifestAttrs::default());
+    }
+
+    /// A manifest with one launcher activity. `orientation` is the enum value
+    /// Android stores for `android:screenOrientation` (0 = landscape,
+    /// 1 = portrait, 4 = sensor).
+    fn manifest_with_activity(
+        activity_orientation: Option<u32>,
+        app_orientation: Option<u32>,
+    ) -> Vec<u8> {
+        let mut strings: Vec<&'static str> = Vec::new();
+        let manifest = start_element(
+            &mut strings,
+            "manifest",
+            &[Attr {
+                name: "package",
+                value: AttrValue::Str("org.example.game"),
+            }],
+        );
+        let application = start_element(
+            &mut strings,
+            "application",
+            &match app_orientation {
+                Some(value) => vec![Attr {
+                    name: "screenOrientation",
+                    value: AttrValue::Int(value),
+                }],
+                None => Vec::new(),
+            },
+        );
+        let mut activity_attrs = vec![Attr {
+            name: "name",
+            value: AttrValue::Str("org.example.game.MainActivity"),
+        }];
+        if let Some(value) = activity_orientation {
+            activity_attrs.push(Attr {
+                name: "screenOrientation",
+                value: AttrValue::Int(value),
+            });
+        }
+        let activity = start_element(&mut strings, "activity", &activity_attrs);
+        let intent_filter = start_element(&mut strings, "intent-filter", &[]);
+        let action = start_element(
+            &mut strings,
+            "action",
+            &[Attr {
+                name: "name",
+                value: AttrValue::Str("android.intent.action.MAIN"),
+            }],
+        );
+        let category = start_element(
+            &mut strings,
+            "category",
+            &[Attr {
+                name: "name",
+                value: AttrValue::Str("android.intent.category.LAUNCHER"),
+            }],
+        );
+        let mut chunks = utf16_pool(&strings);
+        for chunk in [
+            manifest,
+            application,
+            activity,
+            intent_filter,
+            action,
+            category,
+        ] {
+            chunks.extend_from_slice(&chunk);
+        }
+        wrap(chunks)
+    }
+
+    #[test]
+    fn the_launcher_activitys_declared_orientation_is_read() {
+        // Block'Buster declares screenOrientation=0 on its only activity.
+        let parsed = parse_manifest(&manifest_with_activity(Some(0), None)).expect("parses");
+        assert_eq!(parsed.orientation, Some(ScreenOrientation::Landscape));
+        assert_eq!(
+            parsed.launcher_activity.as_deref(),
+            Some("org.example.game.MainActivity")
+        );
+
+        let portrait = parse_manifest(&manifest_with_activity(Some(1), None)).expect("parses");
+        assert_eq!(portrait.orientation, Some(ScreenOrientation::Portrait));
+    }
+
+    #[test]
+    fn a_sensor_activity_does_not_claim_a_fixed_orientation() {
+        // 4 = sensor: the app handles both orientations, so no surface is
+        // "correct" and DroidWin must not pretend the manifest asked for one.
+        let parsed = parse_manifest(&manifest_with_activity(Some(4), None)).expect("parses");
+        assert_eq!(parsed.orientation, None);
+    }
+
+    #[test]
+    fn the_application_orientation_is_the_fallback() {
+        let parsed = parse_manifest(&manifest_with_activity(None, Some(0))).expect("parses");
+        assert_eq!(parsed.orientation, Some(ScreenOrientation::Landscape));
+
+        // A launcher that declares its own wins over the application's.
+        let both = parse_manifest(&manifest_with_activity(Some(1), Some(0))).expect("parses");
+        assert_eq!(both.orientation, Some(ScreenOrientation::Portrait));
+    }
+
+    #[test]
+    fn the_orientation_enum_matches_the_documented_values() {
+        assert_eq!(
+            ScreenOrientation::from_enum(0),
+            Some(ScreenOrientation::Landscape)
+        );
+        assert_eq!(
+            ScreenOrientation::from_enum(6),
+            Some(ScreenOrientation::Landscape)
+        );
+        assert_eq!(
+            ScreenOrientation::from_enum(9),
+            Some(ScreenOrientation::Portrait)
+        );
+        assert_eq!(ScreenOrientation::from_enum(2), None); // user
+        assert_eq!(ScreenOrientation::from_enum(10), None); // fullSensor
+        assert_eq!(ScreenOrientation::from_enum(14), None); // locked
     }
 }

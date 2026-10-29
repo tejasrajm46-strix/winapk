@@ -121,8 +121,9 @@ page — run `pnpm tauri build` for a real build.
 
 - **Dev mode differs**: `pnpm tauri dev` runs a console-subsystem binary, so its own console is
   expected; child consoles are already suppressed.
-- **Display geometry per app** (DW-046): landscape packages such as Block'Buster still draw wider
-  than their portrait virtual display.
+- ~~**Display geometry per app** (DW-046)~~ — fixed: the surface is chosen from the app's declared
+  orientation (1080×2400 or 2400×1080 at 420 dpi, i.e. 411×914 dp) so a landscape package renders
+  into a landscape surface. Evidence in `screenshots/geometry-*.png`.
 - **Force kill**: a killed process cannot run the exit handler; the emulator may survive until the
   next launch reconciles it. A graceful close is clean.
 - Clipboard, file drop, audio, a DPI matrix, and a signed installer remain unverified as recorded in
