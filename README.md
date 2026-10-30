@@ -111,6 +111,9 @@ Android display, so it survives resize and rotation.
 First launch sets up its own Android runtime (SDK, system image, AVD) from Google's distribution, then
 reuses it. Nothing else has to be installed beforehand.
 
+> The download button above points at the installer committed in this repository — the exact binary
+> whose SHA-256 is in the build report. Tagged releases publish the same artifact under **Releases**.
+
 ### Run the portable build
 
 ```powershell
@@ -198,28 +201,9 @@ working.
 
 ## Architecture
 
-```text
-┌──────────────── Desktop (Tauri) ────────────────┐
-│  main window      library, installer, settings   │
-│  overlay-labels   transparent label layer        │
-│  overlay-nav      Back · Home · Recents          │
-│  overlay-rail     Screenshot · Rotate · More     │
-│  overlay-mapper   key-mapping panel              │
-└───────────────┬─────────────────────────────────┘
-                │ one runtime, one adb server
-┌───────────────▼─────────────────────────────────┐
-│ Rust core                                        │
-│  runtime     emulator + adb + scrcpy lifecycle   │
-│  input       keyboard hook, profiles, dispatch   │
-│  overlay     anchoring, visibility, placement    │
-│  capture     screenshots, recordings             │
-│  agent       MCP server, CLI client, control API │
-└───────────────┬─────────────────────────────────┘
-                │ adb shell input on one display id
-┌───────────────▼─────────────────────────────────┐
-│ Android Emulator  ·  one virtual display per app │
-└──────────────────────────────────────────────────┘
-```
+<div align="center">
+  <img src="docs/images/architecture.svg" alt="Three layers: the Tauri desktop shell (main window plus four overlay windows), the Rust core (runtime, input, overlay, capture, agent), and the Android runtime (one emulator with one virtual display per app)" width="100%" />
+</div>
 
 One owner per concern: the runtime owns processes, `InputController` owns profiles and key decisions,
 `Overlay` owns window geometry and visibility, and the React layer renders whatever the backend
@@ -242,10 +226,16 @@ cargo test --manifest-path src-tauri/Cargo.toml --lib  # 271 Rust tests
 | `cargo fmt --check` | clean |
 | `pnpm tauri build` | EXE + NSIS installer |
 
-Live behaviour was verified against the packaged executable: rename, persistence across a restart,
+**What this build verified** against the packaged executable: rename, persistence across a restart,
 reset, window-title updates, clean shutdown with no emulator or scrcpy left behind, and the compact
-layout at 900×560. Details, hashes and the checks that were **not** run:
-[release/WINAPK/BUILD_REPORT.txt](release/WINAPK/BUILD_REPORT.txt).
+layout at 900×560.
+
+**What was verified in earlier passes and is unchanged here**: APK install and launch, one window per
+app, universal `Shift+A/H/R/M/P/O` chords, click-to-place mapping saved and delivered, screenshots and
+rotation. The two lists are kept apart on purpose — see
+[release/WINAPK/BUILD_REPORT.txt](release/WINAPK/BUILD_REPORT.txt), which also names every check that
+was **not** run (installer install/uninstall on a clean machine, signing, MCP `tools/list` size,
+performance numbers).
 
 ---
 
@@ -267,12 +257,40 @@ layout at 900×560. Details, hashes and the checks that were **not** run:
 
 ---
 
+## Troubleshooting
+
+| Symptom | What to do |
+| :--- | :--- |
+| The setup screen appears on first launch | Expected on a PC with no Android SDK. Press **Install Android runtime** and accept Google's licence terms — or point WINAPK at an SDK you already have: *Settings → Android runtime → Choose SDK folder*. |
+| The Runtime screen says acceleration is unavailable | Virtualisation is off in firmware or Hyper-V is not enabled. WINAPK still runs, but the emulator will be slow; the screen reports what the emulator itself answered rather than guessing. |
+| A window opens black or empty | Some apps refuse a secondary display or draw only on display 0. Open the **Attention** panel: it names the app, shows the evidence it collected, and offers *Retry launch* or *Reopen window*. |
+| A mapped key does nothing | Mapping is per Android package and is **off** until you enable it: *Applications → Controls* on that app's row. |
+| A shortcut chord is refused | A chord needs a modifier, and one already used by another action or app mapping is refused with a reason instead of being silently shadowed. Pick another chord. |
+| `WINAPK status` reports an unreachable endpoint | The agent endpoint exists only while WINAPK runs with it enabled (*Agent* screen). The endpoint file is rewritten per session, so a stale one is reported as unreachable rather than retried forever. |
+| An emulator outlives the app | *Settings → Keep the emulator running after WINAPK closes* is on. Turn it off to stop the emulator WINAPK started. An emulator you started yourself is never touched. |
+
+---
+
 ## Security
 
 The agent endpoint binds to **loopback only** and requires a per-session token, with Host and Origin
 checks. The guest-to-host boundary is documented and tested separately — see
 [docs/HOST_ISOLATION.md](docs/HOST_ISOLATION.md) for what is contained, what is not, and why running
 untrusted APKs still deserves a dedicated Windows account.
+
+---
+
+## Roadmap
+
+These are deliberately not shipped yet, rather than half-working:
+
+- **Recording an app's own virtual display.** `screenrecord` refuses a virtual display, so the button is
+  not offered rather than pretending to record.
+- **Rebinding `Ctrl+Shift+R`.** The other six universal chords can be changed.
+- **Control detection.** Mapping a game is click → key; WINAPK does not guess a profile from a
+  screenshot.
+- **Frame shape after rotation.** scrcpy ignores a requested window size for a new display, so a
+  rotated window can keep the old shape.
 
 ---
 
