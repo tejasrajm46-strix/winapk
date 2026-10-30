@@ -47,6 +47,27 @@ CLI naming           PASS  `WINAPK.exe version` -> {"name":"WINAPK","ok":true,
                            "version":"0.1.0"}; `WINAPK.exe tools` 4,034 bytes,
                            27 commands
 
+Packaging check (30 October 2026, 18:00 local, same binaries)
+------------------------------------------------------------
+Install round trip   PASS  Setup.exe /S /D=<temp dir>: installed WINAPK.exe,
+                           resources\scrcpy (26 MB), a Start Menu shortcut, an
+                           HKCU uninstall entry, and the .apk association.
+                           uninstall.exe /S then removed the directory, the
+                           shortcut and the uninstall entry. Manifest level is
+                           asInvoker, so no UAC prompt.
+.apk residue         KNOWN the HKCU\Software\Classes\.apk association survives
+                           the uninstall.
+Portable gap         FOUND WINAPK.exe copied on its own carries no resources\,
+                           so it has no window host and cannot open an app
+                           window (the binary itself is 20.4 MB, the host is
+                           26 MB, and the exe embeds nothing).
+                           WINAPK-portable.zip now ships both together:
+                           17,943,097 bytes; SHA-256
+                           3dd9ac11adfb6c6a68bacb43ae2ba842b381957bb1c3b2fd40c69ee5b806b4b3
+Signing              NOT   Get-AuthenticodeSignature on Setup.exe and
+                           WINAPK.exe: Status = NotSigned. A downloaded copy
+                           gets the SmartScreen prompt.
+
 Not measured / not done this pass
 ---------------------------------
 - The installer was not installed or uninstalled on a clean machine. Its

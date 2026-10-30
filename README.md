@@ -188,12 +188,17 @@ profile can be trimmed without being rebuilt.
 
 | File | What it is |
 | :--- | :--- |
-| [Setup.exe](release/WINAPK/Setup.exe) | NSIS installer: Start Menu shortcut, uninstaller included |
-| [WINAPK.exe](release/WINAPK/WINAPK.exe) | Portable build — no install step |
+| [Setup.exe](release/WINAPK/Setup.exe) | NSIS installer, per-user (no admin prompt): Start Menu shortcut, uninstaller, `.apk` association |
+| [WINAPK-portable.zip](release/WINAPK/WINAPK-portable.zip) | Unzip anywhere and run: the app **and** its bundled window host |
+| [WINAPK.exe](release/WINAPK/WINAPK.exe) | The application binary inside that zip. On its own it has no window host, so it cannot open app windows |
 | [BUILD_REPORT.txt](release/WINAPK/BUILD_REPORT.txt) | The checks that produced these binaries, and their SHA-256 |
 
-Both binaries are committed here, and the download button at the top points at the exact installer
-whose hash is in the build report. Tagged releases publish the same artifact under **Releases**.
+The download button at the top points at the exact installer whose hash is in the build report.
+Tagged releases publish the same artifact under **Releases**.
+
+> **Neither binary is code-signed yet.** A freshly downloaded copy therefore gets a SmartScreen
+> *"Windows protected your PC"* prompt on first run. See [Troubleshooting](#troubleshooting) for what
+> that means and how to check what you are running.
 
 ### 2 · Run the installer
 
@@ -212,8 +217,13 @@ Already have an SDK? *Settings → Android runtime → Choose SDK folder* skips 
 ### 4 · Portable build
 
 ```powershell
-.\release\WINAPK\WINAPK.exe
+Expand-Archive .\WINAPK-portable.zip -DestinationPath .\WINAPK-portable
+.\WINAPK-portable\WINAPK.exe
 ```
+
+Keep `resources\` beside `WINAPK.exe`. That folder holds the window host — scrcpy, adb and SDL, about
+26 MB — and it is what draws each app's window. A bare `WINAPK.exe` copied somewhere on its own will
+start, but an app window cannot open.
 
 ### 5 · From source
 
@@ -404,10 +414,16 @@ cargo test --manifest-path src-tauri/Cargo.toml --lib  # 271 Rust tests
 | `cargo test --lib` | **271 passed, 0 failed** |
 | `cargo fmt --check` | clean |
 | `pnpm tauri build` | EXE + NSIS installer |
+| Installer round trip | Silent install into a temp directory, then uninstall: `WINAPK.exe`, `resources\scrcpy`, the Start Menu shortcut and the HKCU uninstall entry all appeared and were all removed. The installer runs `asInvoker` — per-user, no admin prompt. |
+| Signing | **Not signed.** `Get-AuthenticodeSignature` reports `NotSigned` for both `Setup.exe` and `WINAPK.exe`. |
 
 **What this build verified** against the packaged executable: rename, persistence across a restart,
 reset, window-title updates, clean shutdown with no emulator or scrcpy left behind, and the compact
 layout at 900×560.
+
+The installer round trip above was run on this machine, which already has WebView2 and the Android
+tools — it shows the payload is complete and removal is clean, not that a bare Windows install works.
+The `.apk` association is the one thing the uninstaller leaves in the registry.
 
 **What was verified in earlier passes and is unchanged here**: APK install and launch, one window per
 app, universal `Shift+A/H/R/M/P/O` chords, click-to-place mapping saved and delivered, screenshots and
@@ -438,6 +454,8 @@ performance numbers).
 
 | Symptom | What to do |
 | :--- | :--- |
+| *Windows protected your PC* when you run the installer | Expected on any copy downloaded from the internet: the build is not code-signed, so SmartScreen has no publisher to show. **More info → Run anyway**, or build from source if you would rather not trust an unsigned binary. |
+| An app window never opens from the portable build | `resources\` was left behind. Extract the whole zip and run `WINAPK.exe` from inside it, not a copy of just the exe. |
 | The setup screen appears on first launch | Expected on a PC with no Android SDK. Press **Install Android runtime** and accept Google's licence terms — or point WINAPK at an SDK you already have: *Settings → Android runtime → Choose SDK folder*. |
 | The Runtime screen says acceleration is unavailable | Virtualisation is off in firmware or Hyper-V is not enabled. WINAPK still runs, but the emulator will be slow; the screen reports what the emulator itself answered rather than guessing. |
 | A window opens black or empty | Some apps refuse a secondary display or draw only on display 0. Open the **Attention** panel: it names the app, shows the evidence it collected, and offers *Retry launch* or *Reopen window*. |
