@@ -189,8 +189,7 @@ profile can be trimmed without being rebuilt.
 | File | What it is |
 | :--- | :--- |
 | [Setup.exe](release/WINAPK/Setup.exe) | NSIS installer, per-user (no admin prompt): Start Menu shortcut, uninstaller, `.apk` association |
-| [WINAPK-portable.zip](release/WINAPK/WINAPK-portable.zip) | Unzip anywhere and run: the app **and** its bundled window host |
-| [WINAPK.exe](release/WINAPK/WINAPK.exe) | The application binary inside that zip. On its own it has no window host, so it cannot open app windows |
+| [WINAPK-portable.zip](release/WINAPK/WINAPK-portable.zip) | Unzip anywhere and run — `WINAPK.exe` **with** its bundled window host |
 | [BUILD_REPORT.txt](release/WINAPK/BUILD_REPORT.txt) | The checks that produced these binaries, and their SHA-256 |
 
 The download button at the top points at the exact installer whose hash is in the build report.
@@ -222,8 +221,8 @@ Expand-Archive .\WINAPK-portable.zip -DestinationPath .\WINAPK-portable
 ```
 
 Keep `resources\` beside `WINAPK.exe`. That folder holds the window host — scrcpy, adb and SDL, about
-26 MB — and it is what draws each app's window. A bare `WINAPK.exe` copied somewhere on its own will
-start, but an app window cannot open.
+26 MB — and it is what draws each app's window. There is deliberately no loose `WINAPK.exe` in this
+repository for that reason: on its own it would start and then fail to open anything.
 
 ### 5 · From source
 

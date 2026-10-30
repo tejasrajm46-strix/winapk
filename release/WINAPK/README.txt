@@ -5,8 +5,8 @@ Setup.exe installs it (per-user, no admin prompt).
 
 To run it without installing, unzip WINAPK-portable.zip and run the WINAPK.exe
 inside it. Keep the resources\ folder beside that exe: it holds the window host
-(scrcpy, adb, SDL) and without it an app window cannot open. A bare copy of
-WINAPK.exe on its own will start but has nothing to draw app windows with.
+(scrcpy, adb, SDL) and without it an app window cannot open. There is no loose
+WINAPK.exe here on purpose: on its own it has nothing to draw app windows with.
 
 Neither binary is code-signed yet, so a copy downloaded from the internet gets
 the SmartScreen "Windows protected your PC" prompt: More info > Run anyway.
