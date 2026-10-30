@@ -4,7 +4,9 @@
 
 # WINAPK
 
-**Run Android apps and games in their own real Windows windows.**
+<p><strong>Your apps. Your windows. Your control.</strong></p>
+
+Run Android apps and games in their own real Windows windows.
 
 Not a phone-shaped rectangle inside an emulator. One window per app, on its own Android display —
 with the controls anchored to the window they belong to, and keyboard mapping that starts from the
@@ -23,7 +25,7 @@ real control you click.
 ![React 19](https://img.shields.io/badge/React-19-149eca?style=flat-square&logo=react&logoColor=white)
 ![Tests](https://img.shields.io/badge/tests-122_frontend_%C2%B7_271_rust-2ea043?style=flat-square)
 ![MCP](https://img.shields.io/badge/MCP-34_tools-62d0e8?style=flat-square)
-![License](https://img.shields.io/badge/license-MIT-6b7280?style=flat-square)
+[![License](https://img.shields.io/badge/license-MIT-6b7280?style=flat-square)](LICENSE)
 
 <sub><b>One shared Android runtime · one virtual display per app · one window per app</b></sub>
 
@@ -81,22 +83,67 @@ Android display, so it survives resize and rotation.
 
 ---
 
+## What changes
+
+| | Traditional emulator workflow | **WINAPK** |
+| :--- | :--- | :--- |
+| **Where apps run** | One emulator window, shared by everything | Each app on its own virtual display, in its own Windows window |
+| **Controls** | Configured against a phone screen, inside emulator chrome | Anchored to the app window; mapped by clicking the real control |
+| **Navigation** | Emulator-level | Back · Home · Recents at the bottom of *that* window |
+| **Automation** | Not part of the app | MCP tools and a CLI over one local, token-protected endpoint |
+
+<sub>This describes WINAPK's intended experience — not an audit of every other emulator.</sub>
+
+---
+
 ## Features
 
-| | Area | What you get |
-| :---: | :--- | :--- |
-| 📦 | **Library** | Install APKs from the UI, see what is installed, open or stop an app |
-| 🪟 | **App windows** | Per-app virtual display, own title, free resize, portrait & landscape |
-| 🎛️ | **Control rail** | Screenshot of that window's display, rotate, More → key mapping |
-| ◀ | **Navigation** | Back · Home · Recent Apps, always at the bottom of the window |
-| ⌨️ | **Universal keys** | `Shift+A/H/R/M` nav, `Shift+P` screenshot, `Shift+O` rotate — all rebindable |
-| 🎮 | **Key mapping** | Click the real control → press a key → saved per package and reloaded |
-| 👁️ | **Overlay** | Labels on the game; `Ctrl+Shift+R` hides everything without losing the profile |
-| ⚡ | **Performance** | vCPU / RAM / GPU plan with requested-vs-applied reporting and restart notice |
-| 🤖 | **Agent control** | MCP endpoint (JSON-RPC over loopback) and a `WINAPK` CLI over the same runtime |
-| 🏷️ | **Your name** | Rename the app in Settings; the title bar, header and app windows follow |
-| 📐 | **Compact** | 900×560 minimum; below 1040 px the sidebar becomes an icon rail |
-| 🧹 | **Cleanup** | Closing WINAPK releases held keys, closes its windows and stops the emulator it started |
+<table>
+<tr>
+<td width="50%" valign="top">
+
+#### 🪟 Desktop experience
+
+- **One window per app** — each app on its own virtual display, so four can be open at once
+- **Free resize** — portrait and landscape, independently per window
+- **Anchored controls** — the rail and navigation bar follow the window they belong to
+- **Compact by default** — 900×560 minimum; below 1040 px the sidebar becomes an icon rail
+
+</td>
+<td width="50%" valign="top">
+
+#### 🎮 Controls
+
+- **Click-to-place mapping** — click the real control, press the key; stored as a percentage of the Android display
+- **Universal chords** — `Shift+A/H/R/M/P/O` decided before any game profile, so a game cannot swallow navigation
+- **Overlay labels** — `Ctrl+Shift+R` hides them without losing the profile
+- **Per-package profiles** — saved with that Android package, reloaded with the app
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+#### ⚡ Runtime and performance
+
+- **Own Android runtime** — installed on first run from Google's distribution, then reused
+- **Honest resource reporting** — the plan you requested is shown apart from what Android reports
+- **Phone display control** — size and density through `wm`, without restarting the emulator
+- **Real cleanup** — closing WINAPK stops the emulator it started and leaves yours alone
+
+</td>
+<td valign="top">
+
+#### 🤖 Automation and developer
+
+- **34 MCP tools** — runtime state, packages, taps, screenshots, workflows and triggers
+- **CLI on the same runtime** — 27 commands; it never starts a second emulator
+- **Loopback + token** — per-session token, with Host and Origin checks
+- **Your name** — rename the app; the title bar, header and app windows follow
+
+</td>
+</tr>
+</table>
 
 ---
 
@@ -129,8 +176,16 @@ pnpm tauri dev      # full app
 pnpm tauri build    # release EXE + NSIS installer
 ```
 
-**Requirements** — Node 20+, pnpm, Rust (MSVC toolchain), WebView2, and a Windows machine with
-virtualisation enabled for the emulator.
+### Requirements
+
+| | |
+| :--- | :--- |
+| **OS** | Windows x64. Built and run on this machine's Windows; a clean-VM install has not been tested, and Windows on ARM is not supported (the system image is x86_64). |
+| **Virtualisation** | Required for a usable emulator. Without it WINAPK still runs and says acceleration is unavailable. |
+| **Disk** | ~6 GB free for the one-time Android runtime download. |
+| **Memory** | The emulator uses 2–8 GB depending on the plan you choose (2 GB is the floor). |
+| **WebView2** | Required; present on Windows 11. |
+| **From source** | Node 20+, pnpm, and Rust with the MSVC toolchain. |
 
 ---
 
@@ -149,9 +204,13 @@ Universal chords are decided **before** any per-app profile, so a game cannot sw
 navigation. A chord needs a modifier, so plain typing is never captured, and a chord already used by
 another action or app mapping is refused with a reason instead of being silently shadowed.
 
-**Per-app mapping** — *More → Key mapping → Place on the game*, click the control, press the key,
-**Add**. The point is stored as a percentage of the Android display, so resizing, moving or rotating
-the window keeps it on the same control.
+### Per-app mapping, in three steps
+
+| | Step | What happens |
+| :---: | :--- | :--- |
+| **1** | *More → Key mapping → Place on the game* | The overlay waits for your next click on the running app |
+| **2** | Click the control, then press a key | The point is captured as a percentage of the Android display, so resize and rotation keep it on the same control |
+| **3** | **Add** | The mapping is saved for that Android package and reloaded when you open it again |
 
 ---
 
@@ -282,15 +341,25 @@ untrusted APKs still deserves a dedicated Windows account.
 
 ## Roadmap
 
+#### Shipped
+
+- [x] One window per app, on its own virtual display
+- [x] Click-to-place key mapping, saved per Android package
+- [x] Universal `Shift+A/H/R/M/P/O` chords, rebindable
+- [x] MCP server + CLI over one runtime, loopback-only with a token
+- [x] Customisable application name
+- [x] Compact layout down to 900×560
+
+#### Next
+
 These are deliberately not shipped yet, rather than half-working:
 
-- **Recording an app's own virtual display.** `screenrecord` refuses a virtual display, so the button is
-  not offered rather than pretending to record.
-- **Rebinding `Ctrl+Shift+R`.** The other six universal chords can be changed.
-- **Control detection.** Mapping a game is click → key; WINAPK does not guess a profile from a
-  screenshot.
-- **Frame shape after rotation.** scrcpy ignores a requested window size for a new display, so a
-  rotated window can keep the old shape.
+- [ ] **Recording an app's own virtual display** — `screenrecord` refuses a virtual display, so the
+  button is not offered rather than pretending to record
+- [ ] **Rebinding `Ctrl+Shift+R`** — the other six universal chords can be changed
+- [ ] **Control detection** — mapping a game is click → key; WINAPK does not guess a profile from a screenshot
+- [ ] **Frame shape after rotation** — scrcpy ignores a requested window size for a new display
+- [ ] **Installer test on a clean machine** — the current build was not installed or uninstalled on one
 
 ---
 
@@ -306,6 +375,12 @@ docs/                runtime setup, host isolation, MCP, CLI, decisions, images
 
 ---
 
+## License
+
+[MIT](LICENSE). scrcpy is bundled under Apache-2.0. The Android SDK and emulator are provided by you
+and are not redistributed with WINAPK.
+
 <div align="center">
-<sub>MIT licensed · scrcpy is bundled under Apache-2.0 · the Android SDK and emulator are provided by you and are not redistributed</sub>
+<br />
+<sub>Built with Tauri 2 · Rust · React 19 — and scrcpy, which does the hard part</sub>
 </div>
