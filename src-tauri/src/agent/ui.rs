@@ -163,6 +163,49 @@ pub fn interesting(nodes: &[UiNode]) -> Vec<UiNode> {
         .collect()
 }
 
+/// Named, enabled controls an app exposes through accessibility.
+///
+/// These are names only, deliberately. On a virtual display `uiautomator`
+/// reports bounds in a window-local space that does not match the display
+/// (measured: a 2400x1080 display's tree spans 1080x1080), so using those bounds
+/// as tap coordinates would place a mapping on the wrong pixel. The names still
+/// answer "what controls exist in this app", and placement stays a click on the
+/// real control.
+pub fn candidate_controls(xml: &str, package_id: &str, limit: usize) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut found = Vec::new();
+    for node in parse_hierarchy(xml, Some(package_id), 400) {
+        if !node.clickable || !node.enabled {
+            continue;
+        }
+        // A zero-sized node is an accessibility placeholder, not a control.
+        if node.bounds.width() < 8 || node.bounds.height() < 8 {
+            continue;
+        }
+        let text = node.text.split_whitespace().collect::<Vec<_>>().join(" ");
+        let desc = node
+            .content_desc
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        let name = if !text.is_empty() {
+            text
+        } else if !desc.is_empty() {
+            desc
+        } else {
+            continue;
+        };
+        if name.len() > 48 || !seen.insert(name.to_lowercase()) {
+            continue;
+        }
+        found.push(name);
+        if found.len() >= limit {
+            break;
+        }
+    }
+    found
+}
+
 /// Parse `uiautomator dump` output. Keeps at most `limit` nodes.
 pub fn parse_hierarchy(xml: &str, package_filter: Option<&str>, limit: usize) -> Vec<UiNode> {
     let mut nodes = Vec::new();
@@ -316,6 +359,10 @@ mod tests {
         assert_eq!(search.resource_id, "org.fdroid.fdroid:id/search");
         assert_eq!(search.center(), (270, 170));
         assert!(search.clickable);
+        // Only named, clickable, non-empty controls become candidates; the
+        // non-clickable TextView next to it is not a control.
+        let candidates = candidate_controls(DUMP, "org.fdroid.fdroid", 10);
+        assert_eq!(candidates, vec!["Search".to_string()]);
         assert!(search.focused);
     }
 

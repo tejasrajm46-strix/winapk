@@ -6,29 +6,58 @@ export class PhoneVideo {
   private hasSlice = false;
   private key = false;
   private decoder: VideoDecoder;
+  private readonly ctx: CanvasRenderingContext2D | null;
   private timestamp = 0;
   private waitingForKey = true;
   private stopped = false;
   private idleTimer: number | undefined;
+  /** The one draw scheduled for the next display refresh. */
+  private drawing: number | undefined;
+  /** The newest decoded frame; older ones are closed undrawn. */
+  private newest: VideoFrame | null = null;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
     private readonly onFrame: (width: number, height: number) => void,
     private readonly onError: (error: Error) => void,
   ) {
+    // One context for the stream's lifetime. `alpha: false` and
+    // `desynchronized` let the compositor take the bitmap straight to the
+    // screen instead of blending a full-screen transparent layer every frame.
+    // A test renderer (and a browser that refuses a 2D context) has no canvas
+    // surface; the stream still has to configure and report frames, so a null
+    // context skips only the paint.
+    this.ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
     this.decoder = new VideoDecoder({
       output: (frame) => {
-        try {
-          if (this.stopped) return;
-          if (this.canvas.width !== frame.displayWidth || this.canvas.height !== frame.displayHeight) {
-            this.canvas.width = frame.displayWidth;
-            this.canvas.height = frame.displayHeight;
-          }
-          this.canvas.getContext("2d")?.drawImage(frame, 0, 0);
-          this.onFrame(frame.displayWidth, frame.displayHeight);
-        } finally {
+        if (this.stopped) {
           frame.close();
+          return;
         }
+        // Decoding can outrun the display. Keep only the newest frame and paint
+        // it once per refresh: drawing every decoded frame would decode ahead
+        // of what the screen can show and make the mirror lag behind rather
+        // than dropping frames nobody would see.
+        this.newest?.close();
+        this.newest = frame;
+        this.drawing ??= requestAnimationFrame(() => {
+          this.drawing = undefined;
+          const next = this.newest;
+          this.newest = null;
+          if (!next) return;
+          try {
+            if (this.canvas.width !== next.displayWidth || this.canvas.height !== next.displayHeight) {
+              this.canvas.width = next.displayWidth;
+              this.canvas.height = next.displayHeight;
+            }
+            this.ctx?.drawImage(next, 0, 0);
+            this.onFrame(next.displayWidth, next.displayHeight);
+          } catch (error) {
+            this.onError(error instanceof Error ? error : new Error(String(error)));
+          } finally {
+            next.close();
+          }
+        });
       },
       error: (error) => this.onError(error),
     });
@@ -112,6 +141,10 @@ export class PhoneVideo {
   close() {
     this.stopped = true;
     window.clearTimeout(this.idleTimer);
+    if (this.drawing !== undefined) cancelAnimationFrame(this.drawing);
+    this.drawing = undefined;
+    this.newest?.close();
+    this.newest = null;
     if (this.decoder.state !== "closed") this.decoder.close();
     this.parts = [];
     this.pending = new Uint8Array(0);

@@ -2,7 +2,7 @@
 //!
 //! One policy decides two things together, because they only work as a pair: the
 //! Android virtual display an app is drawn on, and the Windows window that shows
-//! it. DroidWin used to create every display portrait at 540x1170/420 — 205x445
+//! it. WINAPK used to create every display portrait at 540x1170/420 — 205x445
 //! dp, less than half a phone — and then ask for a portrait window. A
 //! landscape-locked game (Block'Buster) rotated that surface to 1170x540 and drew
 //! a layout taller than 205 dp, so its own content was clipped by the display,
@@ -22,14 +22,14 @@ use serde::Serialize;
 
 use crate::domain::AppOrientation;
 
-/// Density of every DroidWin display. It is the emulator's own screen density,
+/// Density of every WINAPK display. It is the emulator's own screen density,
 /// so an app selects the same assets and sees the same dp space it would on the
 /// device itself.
 pub const DENSITY_DPI: u32 = 420;
 
 /// The device's own display — Android's launcher, its own notifications and its
-/// own settings. Every other display DroidWin touches it created itself, so this
-/// is the one id that is not DroidWin's to choose. The virtual phone screen
+/// own settings. Every other display WINAPK touches it created itself, so this
+/// is the one id that is not WINAPK's to choose. The virtual phone screen
 /// mirrors it and sends its touches to it, which is why it is named here rather
 /// than repeated as a literal.
 pub const DEVICE_DISPLAY: u32 = 0;
@@ -189,7 +189,10 @@ mod tests {
     fn a_chosen_orientation_flips_and_round_trips_through_its_setting() {
         assert_eq!(Orientation::Portrait.flipped(), Orientation::Landscape);
         assert_eq!(Orientation::Landscape.flipped(), Orientation::Portrait);
-        assert_eq!(Orientation::parse(" Landscape "), Some(Orientation::Landscape));
+        assert_eq!(
+            Orientation::parse(" Landscape "),
+            Some(Orientation::Landscape)
+        );
         assert_eq!(Orientation::parse("sideways"), None);
         assert_eq!(
             Orientation::setting_key("com.example.game"),

@@ -58,7 +58,7 @@ export function Applications(props: ScreenProps) {
       <PageHead
         eyebrow="Workspace"
         title="Applications Library"
-        lede="What the runtime reports as installed. DroidWin does not cache install state as truth."
+        lede="What the runtime reports as installed. WINAPK does not cache install state as truth."
       >
         <Button variant="secondary" onClick={props.onBrowse} disabled={busy}>
           <IconInstall size={14} />

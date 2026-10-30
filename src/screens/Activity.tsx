@@ -27,7 +27,7 @@ export function Activity(props: ScreenProps) {
       <PageHead
         eyebrow="Management"
         title="Activity"
-        lede="Every operation DroidWin ran, with its own outcome and diagnostic detail."
+        lede="Every operation WINAPK ran, with its own outcome and diagnostic detail."
       >
         <Button variant="ghost" onClick={props.onRefresh} disabled={busy}>
           <IconRefresh size={14} />

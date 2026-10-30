@@ -1,0 +1,64 @@
+WINAPK build report
+===================
+Build date      2026-10-30 16:14 local
+Version         0.1.0 (tauri.conf.json, Cargo.toml, package.json)
+Product name    WINAPK (productName and mainBinaryName)
+Identifier      app.droidwin.desktop (unchanged on purpose: the data directory,
+                the single-instance lock and existing settings depend on it)
+Architecture    x64 (NSIS target)
+Source          working tree at commit 57022b4 plus this change set
+Frontend        tsc --noEmit clean; vite bundle embedded (372.76 kB main chunk)
+Rust            cargo build --release; cargo fmt --check clean
+Tests           frontend 122 passed; Rust lib 271 passed, 0 failed
+Installer       WINAPK_0.1.0_x64-setup.exe (13.00 MiB) copied as Setup.exe
+Executable      src-tauri/target/release/WINAPK.exe copied as WINAPK.exe
+
+SHA-256
+-------
+c68b60f9caf2fcfe077c2be4ae3a78be14d01f2aa5aeacc8b1e783d13c7cc096  WINAPK.exe
+f5ffb1a4f5f274ca70b2e02b51ff0c72baa2bf4405607c3f4e1f4e6928add099  Setup.exe
+
+Binary metadata (read back from the file, not from the build log)
+-----------------------------------------------------------------
+ProductName    WINAPK
+FileVersion    0.1.0
+ProductVersion 0.1.0
+FileDescription WINAPK
+
+Live checks against this executable
+-----------------------------------
+First launch title   PASS  window title "WINAPK"
+Rename               PASS  set_app_display_name("  Hill Climb  ") -> saved and
+                           read back "Hill Climb" (trimmed); native window
+                           title changed to "Hill Climb"
+Version readout      PASS  app_version -> "0.1.0"
+Persistence          PASS  closed the app, relaunched it with the same data
+                           directory: title "Hill Climb" with no further action
+Reset                PASS  reset_app_display_name -> "WINAPK"; title reverted
+Shutdown             PASS  CloseMainWindow exited in ~2 s; 0 WINAPK, 0 emulator,
+                           0 scrcpy processes left (the SDK's shared adb server
+                           was already running before this check)
+Compact layout       PASS  at a 900x560 viewport: sidebar 64 px icon rail,
+                           document scrollWidth == clientWidth (no horizontal
+                           overflow), 0 clipped panels/fields, all 8 navigation
+                           destinations still reachable by accessible name,
+                           Settings panels stack in one column
+CLI naming           PASS  `WINAPK.exe version` -> {"name":"WINAPK","ok":true,
+                           "version":"0.1.0"}; `WINAPK.exe tools` 4,034 bytes,
+                           27 commands
+
+Not measured / not done this pass
+---------------------------------
+- The installer was not installed or uninstalled on a clean machine. Its
+  payload is compressed, so its contents were not inspected beyond the build
+  log, the 13.00 MiB bundle size and the version metadata of the setup binary.
+  A per-user install/uninstall run is still the gap between "the installer
+  builds" and "the installer is verified".
+- The binaries are not code-signed; no certificate was available.
+- MCP tools/list size was not re-measured (it needs a running agent endpoint).
+- No Android package was installed or launched during these checks: the live
+  runs used a scratch data directory and exercised the desktop window, the
+  command layer and the layout. App install/launch behaviour is unchanged by
+  this change set.
+- Startup, frame-rate, CPU and memory numbers were not measured; nothing in
+  this change set was a performance change.

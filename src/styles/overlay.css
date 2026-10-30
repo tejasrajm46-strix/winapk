@@ -168,6 +168,25 @@ html.overlay-root #root {
   cursor: default;
 }
 
+/* Recording is a state, not a hover: the dot and the border stay lit while the
+   file is being written, so "is this recording?" is answerable at a glance. */
+.rail__btn--recording {
+  border-color: #f05252;
+  color: #ff9d9d;
+}
+
+.rail__btn--recording svg circle {
+  fill: #f05252;
+  stroke: #f05252;
+  animation: rail-rec 1.4s ease-in-out infinite;
+}
+
+@keyframes rail-rec {
+  50% {
+    opacity: 0.35;
+  }
+}
+
 .rail__label {
   font-size: 11px;
   line-height: 1.15;
@@ -507,6 +526,67 @@ html.overlay-root #root {
 .mapper__place-label {
   color: #8ea2bf;
   font-size: 11px;
+}
+
+.mapper__detect {
+  align-self: flex-start;
+  padding: 6px 11px;
+  border: 1px solid #2b3b52;
+  border-radius: 6px;
+  background: transparent;
+  color: #a9b8cd;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mapper__detect:hover:not(:disabled) {
+  border-color: #4a7fb5;
+  color: #dbe3f0;
+}
+
+.mapper__detect:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.mapper__detected {
+  padding: 8px 10px;
+  border: 1px solid #233248;
+  border-radius: 8px;
+  background: #0c1524;
+}
+
+.mapper__detected-note {
+  margin: 0 0 6px;
+  color: #8ea2bf;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.mapper__detected-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mapper__detected-item {
+  padding: 4px 9px;
+  border: 1px solid #2f4a70;
+  border-radius: 999px;
+  background: #101c2e;
+  color: #bfe6ff;
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.mapper__detected-item:hover {
+  border-color: #4a7fb5;
+  background: #13243a;
 }
 
 .mapper__add-key {

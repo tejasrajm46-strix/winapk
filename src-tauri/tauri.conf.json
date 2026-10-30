@@ -1,6 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "DroidWin",
+  "productName": "WINAPK",
+  "mainBinaryName": "WINAPK",
   "version": "0.1.0",
   "identifier": "app.droidwin.desktop",
   "build": {
@@ -14,11 +15,11 @@
       {
         "label": "main",
         "create": false,
-        "title": "DroidWin",
-        "width": 1280,
-        "height": 820,
-        "minWidth": 1100,
-        "minHeight": 720,
+        "title": "WINAPK",
+        "width": 1180,
+        "height": 760,
+        "minWidth": 900,
+        "minHeight": 560,
         "resizable": true,
         "decorations": true,
         "theme": "Dark",
@@ -51,6 +52,6 @@
       }
     ],
     "shortDescription": "Run Android apps in their own Windows windows",
-    "longDescription": "DroidWin installs its own Android runtime on first run, then installs each Android package and opens it in its own desktop window."
+    "longDescription": "WINAPK installs its own Android runtime on first run, then installs each Android package and opens it in its own desktop window."
   }
 }

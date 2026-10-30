@@ -1,4 +1,4 @@
-//! State of a package as the runtime reports it, plus DroidWin's own window state.
+//! State of a package as the runtime reports it, plus WINAPK's own window state.
 
 use serde::{Deserialize, Serialize};
 
@@ -9,13 +9,13 @@ pub struct InstalledApp {
     pub label: Option<String>,
     pub version_name: Option<String>,
     pub version_code: Option<u64>,
-    /// A DroidWin-launched window for this package is currently open.
+    /// A WINAPK-launched window for this package is currently open.
     pub running: bool,
     pub window_title: Option<String>,
     pub icon: Option<String>,
     /// Third-party (non-system) package as reported by the runtime.
     pub user_installed: bool,
-    /// Target SDK from the manifest at install time. None when DroidWin did not
+    /// Target SDK from the manifest at install time. None when WINAPK did not
     /// install the package and therefore never saw its manifest.
     pub target_sdk: Option<u32>,
 }

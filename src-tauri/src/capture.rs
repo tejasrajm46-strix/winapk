@@ -6,13 +6,15 @@
 //! contains is what the virtual phone shows.
 //!
 //! The save location is always explicit: the caller passes the directory (the
-//! user's Pictures or Videos folder, or DroidWin's data directory as a
+//! user's Pictures or Videos folder, or WINAPK's data directory as a
 //! fallback). Nothing is written anywhere else, and nothing is written without
 //! being asked for.
 
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use std::time::{Duration, Instant};
 
+use tokio::io::AsyncReadExt;
 use tokio::sync::Mutex;
 
 use crate::domain::{now_ms, DwError, DwResult, ErrorCode};
@@ -20,8 +22,8 @@ use crate::runtime::adb::Adb;
 use crate::runtime::EmulatorRuntime;
 
 /// Folder created inside the user's Pictures/Videos directory.
-pub const FOLDER: &str = "DroidWin";
-/// `screenrecord` stops itself here even if DroidWin is killed, so a crashed
+pub const FOLDER: &str = "WINAPK";
+/// `screenrecord` stops itself here even if WINAPK is killed, so a crashed
 /// host cannot leave a recorder running forever.
 const MAX_RECORD_SECONDS: u32 = 300;
 /// Video bit rate. 8 Mbit/s holds detail in a 1080x2400 game without making
@@ -63,9 +65,29 @@ struct Session {
     directory: PathBuf,
 }
 
+/// One app window being recorded by a second, windowless window host attached
+/// to that window's own Android display.
+///
+/// `screenrecord` cannot be used here: its `--display-id` takes a *physical*
+/// display id and a virtual display has no physical token (measured; the tool
+/// prints "Invalid physical display ID"). scrcpy already receives exactly the
+/// display's video, so it records it instead — the same pixels the window shows,
+/// not the phone's screen.
+struct WindowSession {
+    package_id: String,
+    child: tokio::process::Child,
+    /// The recorder's own hidden window. Its close button is what finalises the
+    /// MP4; killing the process would leave a file without a `moov` atom.
+    hwnd: isize,
+    path: PathBuf,
+    started_at: i64,
+    started: Instant,
+}
+
 #[derive(Default)]
 pub struct Capture {
     session: Mutex<Option<Session>>,
+    window: Mutex<Option<WindowSession>>,
 }
 
 impl Capture {
@@ -122,6 +144,245 @@ impl Capture {
         })
     }
 
+    /// Start recording one app window's Android display.
+    ///
+    /// A second scrcpy instance mirrors that display with no visible window and
+    /// writes it straight to an MP4. `--no-control` keeps it from accepting
+    /// input: it is a recorder, not a second way to touch the app.
+    pub async fn start_window_recording(
+        &self,
+        runtime: &EmulatorRuntime,
+        package_id: &str,
+        display_id: u32,
+        directory: &Path,
+    ) -> DwResult<RecordingState> {
+        if display_id == 0 {
+            return Err(DwError::new(
+                ErrorCode::NotSupported,
+                "Android has not reported a display for that window yet.",
+            )
+            .detail("Wait for the window to show its picture, then record it."));
+        }
+        let mut window = self.window.lock().await;
+        if let Some(active) = window.as_ref() {
+            return Err(DwError::new(
+                ErrorCode::InvalidRequest,
+                format!("WINAPK is already recording {}.", active.package_id),
+            )
+            .detail(format!(
+                "Recording started {} s ago into {}.",
+                active.started.elapsed().as_secs(),
+                active.path.display()
+            )));
+        }
+        if self.session.lock().await.is_some() {
+            return Err(DwError::new(
+                ErrorCode::InvalidRequest,
+                "WINAPK is already recording the phone's screen.",
+            )
+            .detail("Stop that recording before recording an app window."));
+        }
+        let exe = runtime.scrcpy_exe().ok_or_else(|| {
+            DwError::new(
+                ErrorCode::RuntimeNotConfigured,
+                "The window host (scrcpy) is missing from this installation.",
+            )
+        })?;
+        create_directory(directory)?;
+        let path = directory.join(format!("droidwin-{}-recording.mp4", timestamp()));
+        let mut command = tokio::process::Command::new(&exe);
+        command
+            .args(window_recording_args(
+                &runtime.serial(),
+                display_id,
+                package_id,
+                &path,
+            ))
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .kill_on_drop(false);
+        crate::proc::no_console_async(&mut command);
+        let mut child = command.spawn().map_err(|e| {
+            DwError::io(
+                ErrorCode::CaptureFailed,
+                "WINAPK could not start the recording host.",
+                &e,
+            )
+        })?;
+        let pid = child.id().unwrap_or(0);
+
+        // The window appears after the connection is up. Hiding it keeps the
+        // desktop unchanged while the recorder runs; the handle is kept because
+        // closing that window is how scrcpy finalises the file.
+        let mut hwnd = None;
+        for _ in 0..60 {
+            if let Some(found) = crate::proc::window_for_pid(pid) {
+                hwnd = Some(found);
+                break;
+            }
+            if let Ok(Some(status)) = child.try_wait() {
+                let mut detail = String::new();
+                if let Some(mut stderr) = child.stderr.take() {
+                    let _ = tokio::time::timeout(
+                        Duration::from_secs(1),
+                        stderr.read_to_string(&mut detail),
+                    )
+                    .await;
+                }
+                return Err(DwError::new(
+                    ErrorCode::CaptureFailed,
+                    "The recording host closed before it started recording.",
+                )
+                .detail(if detail.trim().is_empty() {
+                    format!("scrcpy exited ({status})")
+                } else {
+                    detail.trim().to_string()
+                }));
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        let Some(hwnd) = hwnd else {
+            let _ = child.kill().await;
+            return Err(DwError::new(
+                ErrorCode::CaptureFailed,
+                "The recording host did not open in time.",
+            )
+            .detail("No recording was written; the app window is unchanged."));
+        };
+        crate::proc::hide_window(hwnd);
+        // A 48-byte header with no frames is what a dead recorder leaves. Give
+        // the first keyframe a moment so "recording" means frames exist.
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        let started_at = now_ms();
+        *window = Some(WindowSession {
+            package_id: package_id.to_string(),
+            child,
+            hwnd,
+            path: path.clone(),
+            started_at,
+            started: Instant::now(),
+        });
+        tracing::info!(
+            "recording {} from display {} into {}",
+            package_id,
+            display_id,
+            path.display()
+        );
+        Ok(RecordingState {
+            active: true,
+            started_at: Some(started_at),
+            elapsed_ms: 0,
+            directory: Some(directory.display().to_string()),
+        })
+    }
+
+    pub async fn window_recording_state(&self) -> RecordingState {
+        match self.window.lock().await.as_ref() {
+            Some(session) => RecordingState {
+                active: true,
+                started_at: Some(session.started_at),
+                elapsed_ms: session.started.elapsed().as_millis() as u64,
+                directory: session.path.parent().map(|path| path.display().to_string()),
+            },
+            None => RecordingState {
+                active: false,
+                started_at: None,
+                elapsed_ms: 0,
+                directory: None,
+            },
+        }
+    }
+
+    /// Stop the window recording and return the finished file.
+    ///
+    /// The close message is the graceful path: scrcpy writes the MP4 trailer on
+    /// exit. If the host does not leave within the budget it is killed, and the
+    /// file's own header decides whether the result is reported or discarded.
+    pub async fn stop_window_recording(&self) -> DwResult<SavedRecording> {
+        let Some(mut session) = self.window.lock().await.take() else {
+            return Err(DwError::new(
+                ErrorCode::InvalidRequest,
+                "WINAPK is not recording an app window.",
+            ));
+        };
+        crate::proc::close_window(session.hwnd);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut exited = false;
+        while Instant::now() < deadline {
+            match session.child.try_wait() {
+                Ok(Some(_)) => {
+                    exited = true;
+                    break;
+                }
+                Ok(None) => tokio::time::sleep(Duration::from_millis(100)).await,
+                Err(_) => break,
+            }
+        }
+        if !exited {
+            tracing::warn!(
+                "recording host for {} did not stop in time; killing it",
+                session.package_id
+            );
+            let _ = session.child.kill().await;
+            let _ = session.child.wait().await;
+        }
+
+        let bytes = match std::fs::read(&session.path) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                return Err(storage_error(
+                    "The recording produced no file.",
+                    &session.path,
+                    &e,
+                ))
+            }
+        };
+        if !is_mp4(&bytes) || !has_moov(&bytes) || bytes.len() < 1_024 {
+            let _ = std::fs::remove_file(&session.path);
+            return Err(DwError::new(
+                ErrorCode::CaptureFailed,
+                "The app window recording is not a playable video, so it was discarded.",
+            )
+            .detail(format!(
+                "{} bytes were written{}.",
+                bytes.len(),
+                if exited {
+                    ""
+                } else {
+                    "; the host had to be killed, so its MP4 trailer may be missing"
+                }
+            )));
+        }
+        let finished_at = now_ms();
+        Ok(SavedRecording {
+            path: session.path.display().to_string(),
+            bytes: bytes.len() as u64,
+            started_at: session.started_at,
+            finished_at,
+            duration_ms: finished_at - session.started_at,
+        })
+    }
+
+    /// Finalise a window recording without reporting a result: used when the
+    /// runtime is going away, so no recorder is left running.
+    pub async fn abort_window_recording(&self) {
+        let Some(mut session) = self.window.lock().await.take() else {
+            return;
+        };
+        crate::proc::close_window(session.hwnd);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            match session.child.try_wait() {
+                Ok(Some(_)) => return,
+                Ok(None) => tokio::time::sleep(Duration::from_millis(100)).await,
+                Err(_) => break,
+            }
+        }
+        let _ = session.child.kill().await;
+        let _ = session.child.wait().await;
+    }
+
     pub async fn recording_state(&self) -> RecordingState {
         let session = self.session.lock().await;
         match session.as_ref() {
@@ -155,7 +416,7 @@ impl Capture {
         if let Some(active) = session.as_ref() {
             return Err(DwError::new(
                 ErrorCode::InvalidRequest,
-                "DroidWin is already recording the phone's screen.",
+                "WINAPK is already recording the phone's screen.",
             )
             .detail(format!(
                 "Recording started {} s ago into {}.",
@@ -262,7 +523,7 @@ impl Capture {
         let Some(session) = self.session.lock().await.take() else {
             return Err(DwError::new(
                 ErrorCode::InvalidRequest,
-                "DroidWin is not recording.",
+                "WINAPK is not recording.",
             ));
         };
         let adb = adb_for(runtime)?;
@@ -427,13 +688,43 @@ pub fn is_mp4(bytes: &[u8]) -> bool {
     bytes.len() > 12 && &bytes[4..8] == b"ftyp"
 }
 
+/// Whether an MP4 carries its index. A recording host that was killed instead of
+/// closed leaves `ftyp` and frames but no `moov`, which no player will open.
+pub fn has_moov(bytes: &[u8]) -> bool {
+    bytes.windows(4).any(|window| window == b"moov")
+}
+
+/// The window host arguments for recording one app display.
+///
+/// Separated from the spawn so the policy is readable (and testable) without a
+/// device: the recorder mirrors the named display, takes no input, plays no
+/// sound, and cannot write into the Windows clipboard.
+fn window_recording_args(
+    serial: &str,
+    display_id: u32,
+    package_id: &str,
+    path: &Path,
+) -> Vec<String> {
+    vec![
+        format!("--serial={serial}"),
+        format!("--display-id={display_id}"),
+        format!("--record={}", path.display()),
+        "--record-format=mp4".to_string(),
+        "--no-audio".to_string(),
+        "--no-control".to_string(),
+        "--no-clipboard-autosync".to_string(),
+        "--no-vd-system-decorations".to_string(),
+        format!("--window-title=WINAPK recorder {package_id}"),
+    ]
+}
+
 fn adb_for(runtime: &EmulatorRuntime) -> DwResult<Adb> {
     runtime.adb().ok_or_else(|| {
         DwError::new(
             ErrorCode::RuntimeNotConfigured,
             "The Android SDK is not configured.",
         )
-        .detail("Point DroidWin at an SDK with platform-tools before capturing.")
+        .detail("Point WINAPK at an SDK with platform-tools before capturing.")
     })
 }
 
@@ -441,7 +732,7 @@ fn create_directory(directory: &Path) -> DwResult<()> {
     std::fs::create_dir_all(directory).map_err(|e| {
         DwError::new(
             ErrorCode::StorageFailure,
-            "DroidWin could not create the folder it saves captures in.",
+            "WINAPK could not create the folder it saves captures in.",
         )
         .detail(format!("{}: {e}", directory.display()))
     })
@@ -493,6 +784,35 @@ fn timestamp() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_window_recording_targets_the_windows_own_display_only() {
+        let args = window_recording_args(
+            "emulator-5554",
+            7,
+            "com.example.game",
+            Path::new("C:/Videos/WINAPK/out.mp4"),
+        );
+        assert!(args.contains(&"--serial=emulator-5554".to_string()));
+        // The app's display, never display 0 (the phone) and never a guessed id.
+        assert!(args.contains(&"--display-id=7".to_string()));
+        assert!(args.iter().all(|arg| arg != "--display-id=0"));
+        assert!(args.iter().any(|arg| arg.starts_with("--record=")));
+        assert!(args.contains(&"--no-control".to_string()));
+        assert!(args.contains(&"--no-audio".to_string()));
+        assert!(args.contains(&"--no-clipboard-autosync".to_string()));
+    }
+
+    #[test]
+    fn a_file_without_its_moov_atom_is_not_reported_as_playable() {
+        let mut killed = vec![0u8; 32];
+        killed[4..8].copy_from_slice(b"ftyp");
+        assert!(is_mp4(&killed));
+        assert!(!has_moov(&killed));
+        let mut finished = killed.clone();
+        finished.extend_from_slice(b"....moov....");
+        assert!(has_moov(&finished));
+    }
 
     #[test]
     fn a_file_android_wrote_is_recognised_by_its_mp4_header() {

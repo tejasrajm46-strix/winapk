@@ -1,8 +1,8 @@
-//! Locating the Android SDK and the tools DroidWin drives.
+//! Locating the Android SDK and the tools WINAPK drives.
 //!
-//! Two kinds of SDK exist as far as DroidWin is concerned: one the user already
+//! Two kinds of SDK exist as far as WINAPK is concerned: one the user already
 //! has (Android Studio, a platform-tools install, `ANDROID_SDK_ROOT`), and one
-//! DroidWin installs for itself into its own data directory. Both are ordinary
+//! WINAPK installs for itself into its own data directory. Both are ordinary
 //! SDK roots; this module chooses between them by how complete they are, so a
 //! developer's machine keeps using its own SDK and a fresh PC gets the managed
 //! one. Nothing here downloads anything: `runtime::install` owns that.
@@ -10,7 +10,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
-/// Where DroidWin keeps its own state. Set once at startup.
+/// Where WINAPK keeps its own state. Set once at startup.
 static DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
 /// A root the user chose on the setup screen. Overrides everything else.
 static CONFIGURED: Mutex<Option<PathBuf>> = Mutex::new(None);
@@ -31,7 +31,7 @@ pub fn explicit_override() -> Option<PathBuf> {
     }
 }
 
-/// `<data>/android-sdk`: the directory DroidWin installs into. `None` before
+/// `<data>/android-sdk`: the directory WINAPK installs into. `None` before
 /// `configure`, which only happens in a unit test.
 pub fn managed_root() -> Option<PathBuf> {
     DATA_DIR.get().map(|dir| dir.join("android-sdk"))
@@ -55,7 +55,7 @@ pub fn install_root() -> Option<PathBuf> {
         .or_else(managed_root)
 }
 
-/// The one SDK root DroidWin is using.
+/// The one SDK root WINAPK is using.
 ///
 /// The setup screen, the installer and the runtime all ask this question, so a
 /// PC with a complete Android Studio SDK cannot be told it has nothing: that
@@ -64,7 +64,7 @@ pub fn install_root() -> Option<PathBuf> {
 ///
 /// A root named by the user (or `DROIDWIN_ANDROID_SDK`) outranks discovery even
 /// when it is empty, because it is a decision rather than a hint. Only when no
-/// SDK is discoverable does this fall back to the directory DroidWin installs
+/// SDK is discoverable does this fall back to the directory WINAPK installs
 /// into.
 pub fn active_root() -> Option<PathBuf> {
     Sdk::locate(None)
@@ -98,7 +98,7 @@ impl Sdk {
     }
 
     /// The best root on this machine: the user's choice first, then the
-    /// environment, then DroidWin's own directory, then the conventional
+    /// environment, then WINAPK's own directory, then the conventional
     /// locations. Ties keep the earlier candidate, so a developer's SDK wins
     /// over a managed one of the same completeness.
     pub fn locate(explicit: Option<PathBuf>) -> Option<Self> {
@@ -391,7 +391,7 @@ pub fn disk_free_mb_for_new(path: &Path) -> Option<u64> {
     None
 }
 
-/// The JRE this SDK uses: one DroidWin installed beside it, else the machine's
+/// The JRE this SDK uses: one WINAPK installed beside it, else the machine's
 /// `JAVA_HOME`. `None` means `java` is expected on `PATH`.
 pub fn java_home(root: &Path) -> Option<PathBuf> {
     let bundled = root.join("jre");
@@ -418,7 +418,7 @@ pub fn apply_java(root: &Path, cmd: &mut std::process::Command) {
     cmd.env("PATH", format!("{};{path}", home.join("bin").display()));
 }
 
-/// scrcpy ships with DroidWin (Apache-2.0). Also accept one on `PATH` so a
+/// scrcpy ships with WINAPK (Apache-2.0). Also accept one on `PATH` so a
 /// developer install keeps working.
 pub fn scrcpy(app_data_dir: &Path) -> Option<PathBuf> {
     let bundled = app_data_dir

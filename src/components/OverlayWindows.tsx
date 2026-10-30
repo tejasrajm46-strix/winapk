@@ -10,6 +10,7 @@ import {
 } from "react";
 import * as backend from "../backend";
 import type {
+  DetectedControls,
   InputAction,
   InputState,
   OverlayData,
@@ -323,6 +324,16 @@ const RAIL: { id: string; label: string; title: string; icon: ReactNode }[] = [
     ),
   },
   {
+    id: "record",
+    label: "Record",
+    title: "Record this window's display to a video file",
+    icon: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="7" />
+      </svg>
+    ),
+  },
+  {
     id: "rotate",
     label: "Rotate",
     title: "Reopen this window in the other orientation",
@@ -348,6 +359,7 @@ function RailBar({ data }: { data: OverlayData | null }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [menu, setMenu] = useState(false);
+  const [recording, setRecording] = useState(false);
   const { error, report, clear } = useActionError();
 
   useEffect(() => {
@@ -355,6 +367,19 @@ function RailBar({ data }: { data: OverlayData | null }) {
     const timer = window.setTimeout(() => setNote(null), 4000);
     return () => window.clearTimeout(timer);
   }, [note]);
+
+  // The recorder is one session for the whole app, and this window may have
+  // been reopened while it ran; ask the backend instead of assuming.
+  useEffect(() => {
+    let live = true;
+    backend
+      .windowRecordingStatus()
+      .then((state) => live && setRecording(state.active))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
 
   if (!data) {
     return (
@@ -380,7 +405,19 @@ function RailBar({ data }: { data: OverlayData | null }) {
   const screenshot = () =>
     run("screenshot", async () => {
       const shot = await backend.appScreenshot(data.package_id);
-      return `Saved ${shot.width}×${shot.height} to DroidWin`;
+      return `Saved ${shot.width}×${shot.height} to WINAPK`;
+    });
+
+  const record = () =>
+    run("record", async () => {
+      if (recording) {
+        const saved = await backend.windowRecordingStop();
+        setRecording(false);
+        return `Recording saved — ${Math.round(saved.bytes / 1024)} KB`;
+      }
+      await backend.windowRecordingStart(data.package_id);
+      setRecording(true);
+      return "Recording this window";
     });
 
   const rotate = () =>
@@ -462,14 +499,24 @@ function RailBar({ data }: { data: OverlayData | null }) {
         <button
           key={item.id}
           type="button"
-          className={`rail__btn${busy === item.id ? " rail__btn--busy" : ""}`}
+          className={`rail__btn${busy === item.id ? " rail__btn--busy" : ""}${
+            item.id === "record" && recording ? " rail__btn--recording" : ""
+          }`}
           title={item.title}
-          aria-label={item.label}
+          aria-label={item.id === "record" && recording ? "Stop recording" : item.label}
           disabled={busy !== null}
-          onClick={() => void (item.id === "screenshot" ? screenshot() : rotate())}
+          onClick={() =>
+            void (item.id === "screenshot"
+              ? screenshot()
+              : item.id === "record"
+                ? record()
+                : rotate())
+          }
         >
           {item.icon}
-          <span className="rail__label">{item.label}</span>
+          <span className="rail__label">
+            {item.id === "record" && recording ? "Stop" : item.label}
+          </span>
         </button>
       ))}
       <button
@@ -543,6 +590,12 @@ const DEFAULT_UNIVERSAL: UniversalBinding[] = [
   { action: "menu", label: "Menu", chord: "Shift+M", android_key: "KEYCODE_MENU" },
   { action: "screenshot", label: "Screenshot", chord: "Shift+P", android_key: null },
   { action: "rotate", label: "Rotate", chord: "Shift+O", android_key: null },
+  {
+    action: "show_hide",
+    label: "Show / hide mapping",
+    chord: "Ctrl+Shift+R",
+    android_key: null,
+  },
 ];
 
 function actionText(action: InputAction): string {
@@ -576,6 +629,9 @@ function MapperPanel({ data }: { data: OverlayData | null }) {
   const captureRef = useRef<HTMLButtonElement>(null);
   const pending = data?.pending ?? null;
   const [universal, setUniversal] = useState<UniversalBinding[]>(DEFAULT_UNIVERSAL);
+  const [detected, setDetected] = useState<DetectedControls | null>(null);
+  const [detecting, setDetecting] = useState(false);
+  const [picked, setPicked] = useState<string | null>(null);
   // Which universal shortcut is waiting for its new keys.
   const [editing, setEditing] = useState<string | null>(null);
   const [chordError, setChordError] = useState<string | null>(null);
@@ -612,6 +668,28 @@ function MapperPanel({ data }: { data: OverlayData | null }) {
   // The window is opaque and this page is its only content: an early return here
   // would paint a white rectangle over the game while the data is in flight.
   if (!data || !packageId) return <section className="mapper" aria-label="Key mapping" />;
+
+  const detect = async () => {
+    setDetecting(true);
+    setError(null);
+    try {
+      setDetected(await backend.detectControls(packageId));
+    } catch (err) {
+      setError(backend.toDwError(err).summary);
+    } finally {
+      setDetecting(false);
+    }
+  };
+
+  const pickControl = async (name: string) => {
+    setPicked(name);
+    setError(null);
+    try {
+      await backend.overlayBeginPlace(packageId);
+    } catch (err) {
+      setError(backend.toDwError(err).summary);
+    }
+  };
 
   const run = async (work: () => Promise<InputState>) => {
     setBusy(true);
@@ -735,10 +813,6 @@ function MapperPanel({ data }: { data: OverlayData | null }) {
               </button>
             </li>
           ))}
-          <li>
-            <span className="mapper__universal-label">Show / hide mapping</span>
-            <kbd className="mapper__chord mapper__chord--fixed">Ctrl+Shift+R</kbd>
-          </li>
         </ul>
         {chordError && (
           <p className="mapper__error" role="alert">
@@ -746,6 +820,27 @@ function MapperPanel({ data }: { data: OverlayData | null }) {
           </p>
         )}
       </div>
+
+      {detected && (
+        <div className="mapper__detected" aria-label="Detected controls">
+          <p className="mapper__detected-note">{detected.note}</p>
+          {detected.controls.length > 0 && (
+            <ul className="mapper__detected-list">
+              {detected.controls.map((name) => (
+                <li key={name}>
+                  <button
+                    type="button"
+                    className="mapper__detected-item"
+                    onClick={() => void pickControl(name)}
+                  >
+                    {name}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       <div className="mapper__rows">
         {mappings.map((mapping) => (
@@ -817,6 +912,14 @@ function MapperPanel({ data }: { data: OverlayData | null }) {
             >
               {pending ? "Place again" : "Place on the game"}
             </button>
+            <button
+              type="button"
+              className="mapper__detect"
+              disabled={busy || detecting}
+              onClick={() => void detect()}
+            >
+              {detecting ? "Asking Android…" : "Detect controls"}
+            </button>
             {pending ? (
               <span className="mapper__point">
                 Point {Math.round(pending.x)}% / {Math.round(pending.y)}%
@@ -831,7 +934,9 @@ function MapperPanel({ data }: { data: OverlayData | null }) {
               </span>
             ) : (
               <span className="mapper__place-label">
-                Click the control on the game — the panel gets out of the way.
+                {picked
+                  ? `Click “${picked}” on the game — the panel gets out of the way.`
+                  : "Click the control on the game — the panel gets out of the way."}
               </span>
             )}
           </div>

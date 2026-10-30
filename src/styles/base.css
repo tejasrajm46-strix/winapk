@@ -82,9 +82,10 @@ a {
   align-items: center;
   gap: var(--space-md);
   padding: 0 var(--space-md);
-  background: color-mix(in srgb, var(--surface-lowest) 88%, transparent);
+  /* Opaque, not blurred: `backdrop-filter` made the whole shell re-composite
+     on every scroll and window move for a 10px effect nobody reads. */
+  background: var(--surface-lowest);
   border-bottom: 1px solid var(--hairline);
-  backdrop-filter: blur(10px);
 }
 
 .topbar__brand {
@@ -210,6 +211,44 @@ a {
   display: flex;
   flex-direction: column;
   gap: var(--space-xs);
+}
+
+/* ------------------------------------------------------- narrow window --- */
+
+/* A 1366x768 laptop at 125% scaling has roughly 1093x590 logical pixels, and a
+ * window snapped to half a 1080p screen is narrower still. The sidebar keeps
+ * its icons and becomes a rail rather than the content losing its width to a
+ * 224px column, and the header gives up the facts that are repeated in the
+ * status bar. Everything hidden here keeps its accessible name. */
+@media (max-width: 1040px) {
+  .shell {
+    --nav-w: 64px;
+  }
+
+  .nav__label,
+  .nav__item-label,
+  .nav__foot {
+    display: none;
+  }
+
+  .nav__groups {
+    padding: var(--space-md) 8px;
+    gap: var(--space-md);
+  }
+
+  .nav__item {
+    justify-content: center;
+    padding: 0;
+    min-height: 44px;
+  }
+
+  .topbar__env {
+    display: none;
+  }
+
+  .topbar__kbd {
+    display: none;
+  }
 }
 
 /* ----------------------------------------------------------------- main --- */

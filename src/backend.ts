@@ -155,7 +155,7 @@ export interface InstalledApp {
   window_title: string | null;
   icon: string | null;
   user_installed: boolean;
-  /** Manifest target SDK from install time; null when DroidWin did not install it. */
+  /** Manifest target SDK from install time; null when WINAPK did not install it. */
   target_sdk: number | null;
 }
 
@@ -486,7 +486,7 @@ export function toDwError(error: unknown): DwError {
 function unavailable(): DwError {
   return {
     code: "backend_unavailable",
-    summary: "The DroidWin backend is not running in this window.",
+    summary: "The WINAPK backend is not running in this window.",
     detail:
       "This page was opened in a browser. Launch the desktop app (pnpm tauri dev) to inspect, install and run packages.",
   };
@@ -510,12 +510,24 @@ export const getSetupState = () => call<SetupReport>("runtime_setup_state");
 export const startSetup = (acceptLicenses: boolean) =>
   call<SetupReport>("runtime_setup_start", { acceptLicenses });
 export const cancelSetup = () => call<void>("runtime_setup_cancel");
-/** `null` returns to DroidWin's own SDK directory. */
+/** `null` returns to WINAPK's own SDK directory. */
 export const setSdkLocation = (path: string | null) =>
   call<SetupReport>("runtime_setup_location", { path });
 export const getStopOnExit = () => call<boolean>("runtime_stop_on_exit");
 export const setStopOnExit = (enabled: boolean) =>
   call<boolean>("set_runtime_stop_on_exit", { enabled });
+
+/** The shipped name. Kept in step with `branding::DEFAULT_NAME` in the backend. */
+export const DEFAULT_APP_NAME = "WINAPK";
+/** The display name the title bar and the shell show. */
+export const getAppName = () => call<string>("app_display_name");
+/** Persist a name; the backend answers with the value now in effect. */
+export const setAppName = (name: string) =>
+  call<string>("set_app_display_name", { name });
+/** Return to the shipped name. */
+export const resetAppName = () => call<string>("reset_app_display_name");
+/** The version the executable was built with. */
+export const getAppVersion = () => call<string>("app_version");
 export const inspectApk = (path: string) => call<ApkInspection>("inspect_apk", { path });
 export const installApk = (path: string, launch: boolean, allowOldTarget = false) =>
   call<InstallOutcome>("install_apk", { path, launch, allowOldTarget });
@@ -537,6 +549,11 @@ export const setInputProfileEnabled = (packageId: string, enabled: boolean) =>
 export const resetInputMappings = (packageId: string) =>
   call<InputState>("reset_input_mappings", { packageId });
 /** One Android control that keeps the same key in every app. */
+export interface DetectedControls {
+  package_id: string;
+  controls: string[];
+  note: string;
+}
 export interface UniversalBinding {
   action: string;
   label: string;
@@ -588,11 +605,19 @@ export const rotateAppWindow = (packageId: string) =>
 export const startRecording = () => call<RecordingState>("recording_start");
 export const stopRecording = () => call<SavedRecording>("recording_stop");
 export const getRecordingStatus = () => call<RecordingState>("recording_status");
+// Recording one app window mirrors that window's own Android display, not the
+// phone's screen. One recording runs at a time.
+export const detectControls = (packageId: string) =>
+  call<DetectedControls>("detect_controls", { packageId });
+export const windowRecordingStart = (packageId: string) =>
+  call<RecordingState>("window_recording_start", { packageId });
+export const windowRecordingStop = () => call<SavedRecording>("window_recording_stop");
+export const windowRecordingStatus = () => call<RecordingState>("window_recording_status");
 export const getPhoneDisplay = () => call<DisplayInfo>("phone_display");
 export const setPhoneDisplay = (width: number, height: number, density?: number) =>
   call<DisplayInfo>("set_phone_display", { width, height, density });
 export const resetPhoneDisplay = () => call<DisplayInfo>("reset_phone_display");
-/** Show a capture DroidWin saved in Explorer. Other paths are refused. */
+/** Show a capture WINAPK saved in Explorer. Other paths are refused. */
 export const revealPath = (path: string) => call<void>("reveal_path", { path });
 export const phoneTap = (x: number, y: number) => call<void>("phone_tap", { x, y });
 export const phoneSwipe = (x1: number, y1: number, x2: number, y2: number, durationMs = 220) =>
@@ -699,7 +724,7 @@ export function onAppsChanged(handler: () => void): Promise<UnlistenFn> {
   return listen("apps://changed", () => handler());
 }
 
-/** A second launch of DroidWin forwards its .apk path here. */
+/** A second launch of WINAPK forwards its .apk path here. */
 export function onApkActivation(handler: (path: string) => void): Promise<UnlistenFn> {
   if (!isDesktop()) return Promise.resolve(() => {});
   return listen<string>("activation://apk", (event) => handler(event.payload));

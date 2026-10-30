@@ -8,7 +8,7 @@
 //! state based   element appears, app is foreground, runtime fails ─┘
 //! ```
 //!
-//! Only lifecycle facts DroidWin itself observes are used: the window host
+//! Only lifecycle facts WINAPK itself observes are used: the window host
 //! starting, exiting and exiting with a failure code, plus the runtime's own
 //! status. Nothing here guesses at an app's state from a picture or a timer.
 //!
@@ -207,7 +207,7 @@ impl Trigger {
     }
 }
 
-/// One entry in the detector's feed: something DroidWin observed, whether or not
+/// One entry in the detector's feed: something WINAPK observed, whether or not
 /// a trigger matched it. This is how a client checks the detector instead of
 /// trusting that it works.
 #[derive(Debug, Clone, Serialize)]

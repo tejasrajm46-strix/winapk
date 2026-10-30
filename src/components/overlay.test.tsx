@@ -55,6 +55,10 @@ const backend = vi.hoisted(() => ({
   removeInputMapping: vi.fn(),
   setInputProfileEnabled: vi.fn(),
   resetInputMappings: vi.fn(),
+  detectControls: vi.fn(),
+  windowRecordingStart: vi.fn(),
+  windowRecordingStop: vi.fn(),
+  windowRecordingStatus: vi.fn(),
   toDwError: vi.fn((error: unknown) => error),
 }));
 
@@ -125,6 +129,17 @@ beforeEach(() => {
   backend.removeInputMapping.mockResolvedValue(inputState);
   backend.setInputProfileEnabled.mockResolvedValue(inputState);
   backend.resetInputMappings.mockResolvedValue(inputState);
+  backend.detectControls.mockResolvedValue({
+    package_id: data.package_id,
+    controls: ["Jump", "Pause"],
+    note: "Android names these controls but not where they are.",
+  });
+  backend.windowRecordingStatus.mockResolvedValue({
+    active: false,
+    started_at: null,
+    elapsed_ms: 0,
+    directory: null,
+  });
 });
 
 describe("mapping overlay geometry", () => {
@@ -288,6 +303,42 @@ describe("action rail", () => {
 });
 
 describe("key-mapping panel", () => {
+  it("lists the controls Android names and arms placement for the chosen one", async () => {
+    render(<OverlayWindow label="overlay-mapper" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Detect controls" }));
+    await waitFor(() => expect(backend.detectControls).toHaveBeenCalledWith(data.package_id));
+
+    // The names are suggestions; the point still comes from clicking the game.
+    fireEvent.click(await screen.findByRole("button", { name: "Jump" }));
+    await waitFor(() => expect(backend.overlayBeginPlace).toHaveBeenCalledWith(data.package_id));
+    expect(await screen.findByText(/Click “Jump” on the game/)).toBeTruthy();
+  });
+
+  it("records this window and turns the rail button into Stop", async () => {
+    backend.windowRecordingStart.mockResolvedValue({
+      active: true,
+      started_at: 1,
+      elapsed_ms: 0,
+      directory: "C:/Videos/WINAPK",
+    });
+    backend.windowRecordingStop.mockResolvedValue({
+      path: "C:/Videos/WINAPK/out.mp4",
+      bytes: 2048,
+      started_at: 1,
+      finished_at: 2,
+      duration_ms: 1000,
+    });
+    render(<OverlayWindow label="overlay-rail" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Record" }));
+    await waitFor(() =>
+      expect(backend.windowRecordingStart).toHaveBeenCalledWith(data.package_id),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Stop recording" }));
+    await waitFor(() => expect(backend.windowRecordingStop).toHaveBeenCalled());
+  });
+
   it("captures a key for a point clicked on the game, then saves it", async () => {
     render(<OverlayWindow label="overlay-mapper" />);
 

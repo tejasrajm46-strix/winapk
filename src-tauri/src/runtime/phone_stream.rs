@@ -26,12 +26,39 @@ pub struct PhoneStream {
     session: Mutex<Option<Session>>,
 }
 
+/// The size to ask `screenrecord` for, or `None` when the display is small
+/// enough to capture as it is.
+///
+/// The phone is painted a few hundred CSS pixels wide, so encoding all 2400
+/// device pixels and decoding them back on the UI thread is work nobody sees.
+/// Capping the long edge at 1600 keeps a 2x buffer for a large window while
+/// cutting the pixel count of a 1080x2400 display by more than half. Even
+/// dimensions matter: H.264 chroma planes cannot encode an odd width.
+pub fn capture_size(width: u32, height: u32) -> Option<(u32, u32)> {
+    const MAX_EDGE: u32 = 1600;
+    let long = width.max(height);
+    if width < 2 || height < 2 || long <= MAX_EDGE {
+        return None;
+    }
+    let scale = MAX_EDGE as f64 / long as f64;
+    let even = |value: u32| ((value as f64 * scale).round() as u32).max(2) & !1;
+    Some((even(width), even(height)))
+}
+
+/// The `--size` argument for a capture, formatted once so the policy is
+/// readable without a device.
+pub fn capture_size_args(size: Option<(u32, u32)>) -> String {
+    size.map(|(width, height)| format!("--size {width}x{height} "))
+        .unwrap_or_default()
+}
+
 impl PhoneStream {
     pub async fn start(
         &self,
         adb: Adb,
         serial: String,
         id: String,
+        size: Option<(u32, u32)>,
         output: Channel<Response>,
     ) -> DwResult<()> {
         let mut session = self.session.lock().await;
@@ -42,9 +69,18 @@ impl PhoneStream {
         // `exec` makes the reported shell PID become the screenrecord PID. The
         // arguments are fixed, not constructed from user input.
         command.args([
-            "-s", &serial, "exec-out",
-            "sh -c 'echo DROIDWIN_PID:$$; exec screenrecord --output-format=h264 --bit-rate 4M --time-limit 180 -'",
-        ]).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
+            "-s",
+            &serial,
+            "exec-out",
+            &format!(
+                "sh -c 'echo DROIDWIN_PID:$$; exec screenrecord --output-format=h264 --bit-rate 3M --time-limit 180 {} -'",
+                capture_size_args(size)
+            ),
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
         proc::no_console_async(&mut command);
         let mut child = command.spawn().map_err(|e| {
             DwError::io(
@@ -168,6 +204,36 @@ async fn forward(
                 if n == 0 { return Err("capture ended".into()); }
                 output.send(Response::new(buf[..n].to_vec())).map_err(|e| e.to_string())?;
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_phone_capture_is_capped_where_the_eye_stops_seeing_the_extra_pixels() {
+        assert_eq!(capture_size(1080, 2400), Some((720, 1600)));
+        assert_eq!(capture_size(2400, 1080), Some((1600, 720)));
+        assert_eq!(capture_size(1440, 3200), Some((720, 1600)));
+        assert_eq!(capture_size(1080, 1920), Some((900, 1600)));
+        // Never upscale a small display: screenrecord would add pixels that
+        // were never there, and the decoder would pay for them.
+        assert_eq!(capture_size(720, 1600), None);
+        assert_eq!(capture_size(540, 1200), None);
+        assert_eq!(capture_size(1, 2400), None);
+        assert_eq!(capture_size_args(Some((720, 1600))), "--size 720x1600 ");
+        assert_eq!(capture_size_args(None), "");
+    }
+
+    #[test]
+    fn the_capture_size_is_even_on_both_axes() {
+        for (width, height) in [(1080, 2401), (1081, 2400), (1440, 3200)] {
+            let (w, h) = capture_size(width, height).unwrap();
+            assert_eq!(w % 2, 0, "{width}x{height} -> {w}x{h}");
+            assert_eq!(h % 2, 0, "{width}x{height} -> {w}x{h}");
+            assert_eq!(w.max(h), 1600, "{width}x{height} -> {w}x{h}");
         }
     }
 }

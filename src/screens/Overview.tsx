@@ -43,7 +43,7 @@ export function Overview(props: ScreenProps) {
             <span className="page__eyebrow">Workspace</span>
             <h1 className="hero__title">Your Android apps</h1>
             <p className="hero__lede">
-              Install a package, and DroidWin opens the real Android app in a window of its own.
+              Install a package, and WINAPK opens the real Android app in a window of its own.
             </p>
           </div>
           <div className="hero__actions">

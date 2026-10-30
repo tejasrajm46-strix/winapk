@@ -1,6 +1,6 @@
 <div align="center">
 
-# DroidWin
+# WINAPK
 
 **Run Android apps and games in their own real Windows windows.**
 
@@ -25,7 +25,7 @@ A Tauri + Rust desktop shell over the Android Emulator, ADB and scrcpy — with 
 ## Why it exists
 
 Running an Android game inside a phone emulator window gives you a phone-shaped
-rectangle and a mouse that pretends to be a finger. DroidWin gives every installed
+rectangle and a mouse that pretends to be a finger. WINAPK gives every installed
 app its own desktop window and treats that window as the product:
 
 - **One window per app** — each runs on its own virtual display, so four apps can be
@@ -48,7 +48,8 @@ app its own desktop window and treats that window as the product:
 | **Overlay** | Labels on the game, `Ctrl+Shift+R` hides everything without losing the profile |
 | **Performance** | vCPU / RAM / GPU plan with requested-vs-applied reporting and restart notice |
 | **Agent control** | MCP endpoint (JSON-RPC over loopback) and a `droidwin` CLI over the same runtime |
-| **Cleanup** | Closing DroidWin releases held keys, closes its windows and stops the emulator it started |
+| **Cleanup** | Closing WINAPK releases held keys, closes its windows and stops the emulator it started |
+| **Branding** | Settings renames the app; the title bar, header and app windows follow, and the name is remembered |
 
 ## Screenshots
 
@@ -60,10 +61,10 @@ app its own desktop window and treats that window as the product:
 
 ```powershell
 # 1. Run the built app (no toolchain needed)
-.\release\DroidWin\DroidWin.exe
+.\release\WINAPK\WINAPK.exe
 
 # 2. or install it
-.\release\DroidWin\Setup.exe
+.\release\WINAPK\Setup.exe
 ```
 
 First launch sets up its Android runtime (SDK, system image, AVD) from Google's
@@ -132,20 +133,20 @@ the React layer renders whatever the backend pushes — it never mirrors state.
 
 ## CLI and agents
 
-The `droidwin` command is a client of the running window (loopback endpoint,
+The `WINAPK` command is a client of the running window (loopback endpoint,
 token auth, same permission gate as MCP). It never starts a second emulator.
 
 ```powershell
-droidwin status
-droidwin apps list
-droidwin apps open com.fingersoft.hillclimb
-droidwin mapping save com.fingersoft.hillclimb --key W --tap 49,61
-droidwin perf preset performance
-droidwin capture screenshot
-droidwin tools              # 27 commands, 4.1 KB — 6.8x smaller than tools/list
+WINAPK status
+WINAPK apps list
+WINAPK apps open com.fingersoft.hillclimb
+WINAPK mapping save com.fingersoft.hillclimb --key W --tap 49,61
+WINAPK perf preset performance
+WINAPK capture screenshot
+WINAPK tools              # 27 commands, 4.1 KB — 6.8x smaller than tools/list
 ```
 
-`droidwin --mcp-stdio` bridges an MCP client to the same endpoint.
+`WINAPK.exe --mcp-stdio` bridges an MCP client to the same endpoint.
 
 ## Security
 
@@ -157,8 +158,8 @@ not, and why running untrusted APKs still deserves a dedicated Windows account.
 ## Testing
 
 ```powershell
-pnpm test                                   # 113 frontend tests
-cargo test --manifest-path src-tauri/Cargo.toml --lib   # 256 Rust tests
+pnpm test                                   # 122 frontend tests
+cargo test --manifest-path src-tauri/Cargo.toml --lib   # Rust unit tests
 ```
 
 Live checks were run against the built executable: app launch, emulator boot,
@@ -172,7 +173,7 @@ shutdown. Details and known limits: [release/DroidWin/BUILD_REPORT.txt](release/
 src/                 React + TypeScript UI (main window, overlays, screens)
 src-tauri/src/       Rust backend: runtime, input, overlay, capture, agent, cli
 src-tauri/tests/     live harnesses (mapping, capture, isolation, phones)
-release/DroidWin/    shipped EXE, installer, README and build report
+release/WINAPK/      shipped EXE, installer, README and build report
 docs/                runtime setup, host isolation, decisions, images
 ```
 
@@ -184,6 +185,12 @@ docs/                runtime setup, host isolation, decisions, images
   requested window size for a new display, so the frame can keep the old shape.
 - `Ctrl+Shift+R` cannot be rebound yet; the other six can.
 - No control detection: mapping a game is place → key, never a guessed profile.
+- The application name is display branding only. The executable, the installer's
+  product name and the bundle identifier are build-time values; renaming the
+  display name does not move or rename them.
+- The AVD WINAPK creates is still named `DroidWin_API36` on disk. That is an
+  internal identifier kept on purpose: renaming it would orphan the system image
+  and settings of anyone upgrading from an earlier build.
 
 ## License
 

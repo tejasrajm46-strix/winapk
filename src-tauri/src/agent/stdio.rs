@@ -2,7 +2,7 @@
 //!
 //! MCP clients that start a process expect newline-delimited JSON-RPC on stdin
 //! and nothing else on stdout. This bridge is only that: it forwards each
-//! message to the endpoint the running DroidWin wrote to its data directory and
+//! message to the endpoint the running WINAPK wrote to its data directory and
 //! writes the reply back. Diagnostics go to stderr, never to stdout, so the
 //! protocol stream stays clean.
 
@@ -64,7 +64,7 @@ fn load_endpoint() -> Option<Endpoint> {
 /// closes the connection, so reading to end is exact.
 fn post(endpoint: &Endpoint, body: &str) -> Result<Option<String>, String> {
     let mut stream = TcpStream::connect((endpoint.host.as_str(), endpoint.port))
-        .map_err(|_| "DroidWin is not running, or its agent endpoint is stopped.".to_string())?;
+        .map_err(|_| "WINAPK is not running, or its agent endpoint is stopped.".to_string())?;
     let _ = stream.set_read_timeout(Some(Duration::from_secs(120)));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(30)));
     let request = format!(
@@ -78,10 +78,10 @@ fn post(endpoint: &Endpoint, body: &str) -> Result<Option<String>, String> {
     );
     stream
         .write_all(request.as_bytes())
-        .map_err(|e| format!("DroidWin could not receive that request: {e}"))?;
+        .map_err(|e| format!("WINAPK could not receive that request: {e}"))?;
     let mut response = Vec::new();
     std::io::Read::read_to_end(&mut stream, &mut response)
-        .map_err(|e| format!("DroidWin did not answer: {e}"))?;
+        .map_err(|e| format!("WINAPK did not answer: {e}"))?;
     parse_response(&response)
 }
 
@@ -95,7 +95,7 @@ fn parse_response(response: &[u8]) -> Result<Option<String>, String> {
         .and_then(|value| value.parse::<u16>().ok())
         .unwrap_or(0);
     if !(200..300).contains(&status) {
-        return Err(format!("DroidWin answered HTTP {status}."));
+        return Err(format!("WINAPK answered HTTP {status}."));
     }
     let payload = payload.trim();
     if payload.is_empty() {
@@ -120,7 +120,7 @@ pub fn run() -> i32 {
     let mut stdout = std::io::stdout();
     if endpoint.is_none() {
         eprintln!(
-            "droidwin-mcp: no agent endpoint found under {}. Start DroidWin and enable the agent endpoint.",
+            "WINAPK-mcp: no agent endpoint found under {}. Start WINAPK and enable the agent endpoint.",
             data_dir()
                 .map(|dir| dir.display().to_string())
                 .unwrap_or_else(|| "the app data directory".into())
@@ -147,21 +147,21 @@ pub fn run() -> i32 {
             (Some(endpoint), Some(id)) => match post(endpoint, trimmed) {
                 Ok(Some(reply)) => reply,
                 Ok(None) => {
-                    error_reply(id, "DroidWin returned no reply to this request.").to_string()
+                    error_reply(id, "WINAPK returned no reply to this request.").to_string()
                 }
                 Err(message) => error_reply(id, &message).to_string(),
             },
             // Notifications must be forwarded, but they never get a stdout reply.
             (Some(endpoint), None) => {
                 if let Err(message) = post(endpoint, trimmed) {
-                    eprintln!("droidwin-mcp: {message}");
+                    eprintln!("WINAPK-mcp: {message}");
                 }
                 continue;
             }
             // A request still deserves a reply; a notification does not.
             (None, Some(id)) => error_reply(
                 id,
-                "DroidWin is not running, or its agent endpoint is stopped.",
+                "WINAPK is not running, or its agent endpoint is stopped.",
             )
             .to_string(),
             (None, None) => continue,

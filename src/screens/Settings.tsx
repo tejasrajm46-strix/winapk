@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import mark from "../assets/branding/droidwin-mark.png";
 import * as backend from "../backend";
+import { DEFAULT_APP_NAME } from "../backend";
 import type {
   DisplayInfo,
   DwError,
@@ -72,7 +73,7 @@ function effectiveSentence(report: HardwareReport): string {
 }
 
 export function Settings(props: ScreenProps) {
-  const { env, status } = props;
+  const { env, status, appName, onAppNameChange } = props;
 
   const [hardware, setHardware] = useState<HardwareReport | null>(null);
   const [hardwareError, setHardwareError] = useState<DwError | null>(null);
@@ -87,7 +88,7 @@ export function Settings(props: ScreenProps) {
   const [keyboard, setKeyboard] = useState<KeyboardMode>("auto");
   const [keyboardBusy, setKeyboardBusy] = useState(false);
 
-  // The emulator DroidWin started is stopped on close unless the user says not
+  // The emulator WINAPK started is stopped on close unless the user says not
   // to; the backend stores the choice, so it survives a restart.
   const [stopOnExit, setStopOnExitState] = useState(true);
   const [sdkBusy, setSdkBusy] = useState(false);
@@ -100,6 +101,16 @@ export function Settings(props: ScreenProps) {
   const [sizeChoice, setSizeChoice] = useState(0);
   const [densityChoice, setDensityChoice] = useState(0);
   const [displayBusy, setDisplayBusy] = useState(false);
+
+  // The draft starts from what the shell already shows, so the field never
+  // disagrees with the name in the title bar until the user edits it.
+  const [nameDraft, setNameDraft] = useState(appName);
+  const [nameBusy, setNameBusy] = useState(false);
+  const [nameError, setNameError] = useState<DwError | null>(null);
+  useEffect(() => setNameDraft(appName), [appName]);
+  // Read from the bundle, so the About panel cannot claim a version the
+  // executable was not built with.
+  const [version, setVersion] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -114,6 +125,8 @@ export function Settings(props: ScreenProps) {
         setGpu(report.plan.gpu);
         setKeyboard(await backend.getKeyboardMode());
         setStopOnExitState(await backend.getStopOnExit());
+        const built = await backend.getAppVersion();
+        if (active) setVersion(built);
         const setup = await backend.getSetupState();
         if (active) {
           setSdkRoot(setup.sdk_root);
@@ -224,6 +237,40 @@ export function Settings(props: ScreenProps) {
     }
   };
 
+  const saveName = async () => {
+    setNameBusy(true);
+    setSaved(null);
+    setNameError(null);
+    try {
+      const saved = await backend.setAppName(nameDraft.trim());
+      onAppNameChange(saved);
+      setNameDraft(saved);
+      setSaved(
+        `The application name is now ${saved}. Its window title changed too; windows opened before this keep the name they were created with.`,
+      );
+    } catch (err) {
+      setNameError(backend.toDwError(err));
+    } finally {
+      setNameBusy(false);
+    }
+  };
+
+  const resetName = async () => {
+    setNameBusy(true);
+    setSaved(null);
+    setNameError(null);
+    try {
+      const saved = await backend.resetAppName();
+      onAppNameChange(saved);
+      setNameDraft(saved);
+      setSaved(`The application name is back to ${saved}.`);
+    } catch (err) {
+      setNameError(backend.toDwError(err));
+    } finally {
+      setNameBusy(false);
+    }
+  };
+
   const changeKeyboard = async (next: KeyboardMode) => {
     setKeyboardBusy(true);
     setSaved(null);
@@ -243,8 +290,8 @@ export function Settings(props: ScreenProps) {
       setStopOnExitState(await backend.setStopOnExit(next));
       setSaved(
         next
-          ? "Saved. Closing DroidWin will stop the emulator it started."
-          : "Saved. The emulator DroidWin started will keep running after DroidWin closes.",
+          ? "Saved. Closing WINAPK will stop the emulator it started."
+          : "Saved. The emulator WINAPK started will keep running after WINAPK closes.",
       );
     } catch (err) {
       setHardwareError(backend.toDwError(err));
@@ -270,12 +317,16 @@ export function Settings(props: ScreenProps) {
     }
   };
 
+  const trimmedName = nameDraft.trim();
+  const nameChanged = trimmedName !== appName;
+  const canSaveName = trimmedName.length > 0 && nameChanged;
+
   return (
     <div className="page">
       <PageHead
         eyebrow="Management"
         title="Settings"
-        lede="Every control here changes something real. Values that Android has confirmed are shown separately from the values DroidWin requested."
+        lede="Every control here changes something real. Values that Android has confirmed are shown separately from the values WINAPK requested."
       >
         <Button variant="secondary" onClick={props.onOpenLogs}>
           <IconFolder size={14} />
@@ -302,16 +353,21 @@ export function Settings(props: ScreenProps) {
 
         <Panel title="About this build">
           <div className="about">
-            <img className="about__mark" src={mark} alt="DroidWin logo" />
+            <img className="about__mark" src={mark} alt={`${appName} logo`} />
             <div>
-              <div className="row__title">DroidWin</div>
+              <div className="row__title">{appName}</div>
               <div className="row__meta">Android apps in their own Windows windows</div>
             </div>
           </div>
           <dl className="fields">
-            <Field label="Version" value="0.1.0 (development build)" />
+            <Field
+              label="Version"
+              value={version ?? "unknown"}
+              missing={!version}
+              sub="Reported by this executable"
+            />
             <Field label="Runtime model" value="One shared Android emulator, one virtual display per app window" />
-            <Field label="Licensing" value="scrcpy is bundled under Apache-2.0. The Android SDK and emulator are provided by you and are not redistributed by DroidWin." />
+            <Field label="Licensing" value="scrcpy is bundled under Apache-2.0. The Android SDK and emulator are provided by you and are not redistributed by WINAPK." />
             <Field label="Fonts" value="Instrument Serif and Onest, bundled under the SIL Open Font License 1.1" />
           </dl>
         </Panel>
@@ -320,18 +376,18 @@ export function Settings(props: ScreenProps) {
       <div className="grid grid--2">
         <Panel
           title="Android runtime"
-          note="Where Android lives on this PC, and what closing DroidWin does to it."
+          note="Where Android lives on this PC, and what closing WINAPK does to it."
         >
           <dl className="fields">
             <Field
               label="SDK directory"
               value={<span className="mono">{sdkRoot ?? "not found"}</span>}
-              sub={sdkManaged ? "Installed by DroidWin" : "Existing SDK, used as it is"}
+              sub={sdkManaged ? "Installed by WINAPK" : "Existing SDK, used as it is"}
               missing={!sdkRoot}
             />
             <Field
               label="Emulator on close"
-              value={stopOnExit ? "Stopped if DroidWin started it" : "Left running"}
+              value={stopOnExit ? "Stopped if WINAPK started it" : "Left running"}
             />
           </dl>
           <div className="inline">
@@ -358,12 +414,12 @@ export function Settings(props: ScreenProps) {
                 disabled={sdkBusy}
                 onClick={() => void changeSdk(null)}
               >
-                Use DroidWin's folder
+                Use WINAPK's folder
               </Button>
             )}
           </div>
           <label className="hw-field" style={{ marginTop: "var(--space-md)" }}>
-            <span className="hw-field__label">Keep the emulator running after DroidWin closes</span>
+            <span className="hw-field__label">Keep the emulator running after WINAPK closes</span>
             <input
               type="checkbox"
               checked={!stopOnExit}
@@ -567,7 +623,7 @@ export function Settings(props: ScreenProps) {
 
         <Panel
           title="Phone display"
-          note="Android's own size and density, changed through wm. App windows keep the displays DroidWin created for them."
+          note="Android's own size and density, changed through wm. App windows keep the displays WINAPK created for them."
         >
           {displayError && (
             <div className="note note--warn" role="alert">
@@ -648,9 +704,75 @@ export function Settings(props: ScreenProps) {
           </div>
           <p className="hw-note">
             This changes the phone screen and what Android reports for display 0. It does not
-            restart the emulator, and it does not touch the size of the windows DroidWin opened
+            restart the emulator, and it does not touch the size of the windows WINAPK opened
             for apps. A smaller display costs less to capture, which is the point of offering it
             on a slower machine.
+          </p>
+        </Panel>
+
+        <Panel
+          title="Application name"
+          note="The name in the title bar, the top bar and the About panel."
+        >
+          {nameError && (
+            <div className="note note--warn" role="alert">
+              <div className="note__head">
+                <IconAlert size={14} />
+                <span>{nameError.summary}</span>
+              </div>
+              {nameError.detail && <p className="note__body">{nameError.detail}</p>}
+            </div>
+          )}
+          <dl className="fields">
+            <Field label="In use" value={appName} />
+          </dl>
+          <div className="hw-form">
+            <label className="hw-field">
+              <span className="hw-field__label">Display name</span>
+              <input
+                className="hw-select"
+                type="text"
+                value={nameDraft}
+                // The backend enforces the same limit; this only stops the typing
+                // that would be refused on save.
+                maxLength={40}
+                spellCheck={false}
+                aria-label="Application display name"
+                disabled={nameBusy}
+                onChange={(event) => setNameDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && canSaveName) {
+                    event.preventDefault();
+                    void saveName();
+                  }
+                }}
+              />
+            </label>
+            <Button
+              variant="primary"
+              disabled={nameBusy || !canSaveName}
+              disabledReason={
+                trimmedName.length === 0
+                  ? "A name is required."
+                  : `The name is already ${appName}.`
+              }
+              onClick={() => void saveName()}
+            >
+              {nameBusy ? "Saving…" : "Save name"}
+            </Button>
+            <Button
+              variant="ghost"
+              disabled={nameBusy || appName === DEFAULT_APP_NAME}
+              disabledReason={`The shipped name ${DEFAULT_APP_NAME} is already in use.`}
+              onClick={() => void resetName()}
+            >
+              Reset to {DEFAULT_APP_NAME}
+            </Button>
+          </div>
+          <p className="hw-note">
+            This is branding only. The executable, the installer&apos;s product name and the package
+            identifier stay as they were built, so shortcuts, updates and installed copies keep
+            working. The name is saved locally and is already in effect next time you start.
           </p>
         </Panel>
       </div>
@@ -658,7 +780,7 @@ export function Settings(props: ScreenProps) {
       <Panel title="Not implemented yet" note="Listed so nothing here looks like a missing switch.">
         <ul className="stack stack--sm secondary" style={{ paddingLeft: 18, margin: 0 }}>
           <li>Deleting an app&apos;s Android data from the library (the backend supports it; the control is not built).</li>
-          <li>Automatic SDK provisioning — DroidWin tells you what to install instead of downloading Google&apos;s SDK.</li>
+          <li>Automatic SDK provisioning — WINAPK tells you what to install instead of downloading Google&apos;s SDK.</li>
           <li>Per-window audio is not routed: Android&apos;s sound is played once by the emulator, so every open window shares the device&apos;s audio rather than each contributing its own stream.</li>
           <li>Cloud sync, accounts, or any telemetry.</li>
         </ul>
@@ -670,7 +792,7 @@ export function Settings(props: ScreenProps) {
           <p className="note__body">
             Apps are only supported if their CPU ABI, Android API level, graphics use and services
             requirements match the runtime. ARM-only packages cannot run on this x86_64 image, and
-            apps that insist on Google Play services will fail. DroidWin reports what Android reports
+            apps that insist on Google Play services will fail. WINAPK reports what Android reports
             rather than predicting compatibility.
           </p>
         </div>

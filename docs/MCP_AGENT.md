@@ -1,6 +1,6 @@
-# Driving DroidWin from an AI agent
+# Driving WINAPK from an AI agent
 
-DroidWin runs a local [Model Context Protocol](https://modelcontextprotocol.io) endpoint. An MCP
+WINAPK runs a local [Model Context Protocol](https://modelcontextprotocol.io) endpoint. An MCP
 client can install and open apps, inspect a screen, tap, type, swipe, press keys, wait for state and
 verify the result — through the same Rust runtime the desktop window uses.
 
@@ -9,7 +9,7 @@ endpoint opens one loopback listener; closing it opens nothing.
 
 ## Enable it
 
-1. Open **Agent** in DroidWin's sidebar.
+1. Open **Agent** in WINAPK's sidebar.
 2. **Start endpoint**. The URL, the stdio command and the token file appear; each has a copy button.
 3. Grant the access level you want:
    - **Full control** — open apps, tap, type, install.
@@ -17,7 +17,7 @@ endpoint opens one loopback listener; closing it opens nothing.
 4. **Pause automation** stops waits that are already running and refuses further input. The app
    windows keep working for you.
 
-The endpoint comes back automatically the next time DroidWin starts, until you stop it.
+The endpoint comes back automatically the next time WINAPK starts, until you stop it.
 
 ## The same operations from a shell
 
@@ -41,18 +41,18 @@ Both transports reach the same dispatcher, so a tool behaves identically either 
 ### stdio (a client that launches a process)
 
 ```
-"C:\path\to\DroidWin.exe" --mcp-stdio
+"C:\path\to\WINAPK.exe" --mcp-stdio
 ```
 
 `--mcp-stdio` starts no window and no webview. It forwards each newline-delimited JSON-RPC message
 from stdin to the running app and writes the reply to stdout. Diagnostics go to stderr only.
-DroidWin must already be running with the endpoint enabled.
+WINAPK must already be running with the endpoint enabled.
 
 Codex CLI and Claude Code both accept a command:
 
 ```bash
-codex mcp add droidwin -- "C:\path\to\DroidWin.exe" --mcp-stdio
-claude mcp add droidwin -- "C:\path\to\DroidWin.exe" --mcp-stdio
+codex mcp add droidwin -- "C:\path\to\WINAPK.exe" --mcp-stdio
+claude mcp add droidwin -- "C:\path\to\WINAPK.exe" --mcp-stdio
 ```
 
 A JSON-configured client (Claude Desktop, Cursor, and others):
@@ -61,7 +61,7 @@ A JSON-configured client (Claude Desktop, Cursor, and others):
 {
   "mcpServers": {
     "droidwin": {
-      "command": "C:\\path\\to\\DroidWin.exe",
+      "command": "C:\\path\\to\\WINAPK.exe",
       "args": ["--mcp-stdio"]
     }
   }
@@ -92,7 +92,7 @@ Every input is a typed JSON object with a documented schema; `tools/list` is the
 | Tool | What it answers |
 | --- | --- |
 | `get_runtime_status` | Runtime state, Android's report, and every open window with its display id |
-| `list_devices` | Devices adb can see, marking the one DroidWin manages |
+| `list_devices` | Devices adb can see, marking the one WINAPK manages |
 | `list_installed_apps` | Third-party packages with labels and window state |
 | `get_app_info` | One package plus its window and display |
 | `get_active_window` | Open windows and their display ids |
@@ -159,7 +159,7 @@ selector over coordinates when the app exposes an accessibility tree.
   virtual display in the end-to-end test. Games and canvas-rendered apps often expose nothing; use
   the screenshot and coordinates there.
 - **One Android user.** Apps share the emulator's user and are not isolated from each other.
-- **DroidWin cannot tell which taps are consequential.** There is no purchase/message detection.
+- **WINAPK cannot tell which taps are consequential.** There is no purchase/message detection.
   Use read-only mode or stop the endpoint when you are not supervising.
 - **No clipboard or file-drop tool.** Those paths are not verified in this build, so no tool claims
   them.
@@ -181,9 +181,9 @@ Do not expose the port through a tunnel or reverse proxy. It is a local control 
 
 | Symptom | Cause |
 | --- | --- |
-| `DroidWin is not running, or its agent endpoint is stopped.` | Start the app and the endpoint; the stdio bridge has nothing to forward to. |
+| `WINAPK is not running, or its agent endpoint is stopped.` | Start the app and the endpoint; the stdio bridge has nothing to forward to. |
 | `401 Unauthorized` | The token file changed (endpoint restarted) — re-read it. |
-| `DroidWin does not know which display … is on` | Call `open_app` first, or pass `display_id`. |
+| `WINAPK does not know which display … is on` | Call `open_app` first, or pass `display_id`. |
 | `Android did not return an image for display N` | The window was closed; the display no longer exists. |
 | `permission_denied` | The Agent screen is in read-only mode. |
 | `automation_paused` | Resume automation on the Agent screen. |

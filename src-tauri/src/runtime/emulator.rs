@@ -36,7 +36,7 @@ pub async fn ensure_avd(sdk: &Sdk, cfg: &AvdConfig) -> DwResult<bool> {
     if !manager.is_file() {
         return Err(DwError::new(
             ErrorCode::RuntimeNotConfigured,
-            "The SDK's avdmanager was not found, so DroidWin cannot create its virtual device.",
+            "The SDK's avdmanager was not found, so WINAPK cannot create its virtual device.",
         )
         .detail(format!("Expected {}", manager.display())));
     } // A .bat needs cmd.exe; arguments are separate so no shell interpolation happens.
@@ -115,7 +115,7 @@ pub async fn ensure_avd(sdk: &Sdk, cfg: &AvdConfig) -> DwResult<bool> {
     } else {
         Err(DwError::new(
             ErrorCode::RuntimeStartFailed,
-            "DroidWin could not create its virtual device.",
+            "WINAPK could not create its virtual device.",
         )
         .detail(format!(
             "avdmanager exit {code:?}\n{}\n{}",

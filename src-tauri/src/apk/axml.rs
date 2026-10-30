@@ -768,7 +768,7 @@ mod tests {
     #[test]
     fn a_sensor_activity_does_not_claim_a_fixed_orientation() {
         // 4 = sensor: the app handles both orientations, so no surface is
-        // "correct" and DroidWin must not pretend the manifest asked for one.
+        // "correct" and WINAPK must not pretend the manifest asked for one.
         let parsed = parse_manifest(&manifest_with_activity(Some(4), None)).expect("parses");
         assert_eq!(parsed.orientation, None);
     }

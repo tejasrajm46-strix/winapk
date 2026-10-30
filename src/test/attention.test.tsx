@@ -22,7 +22,7 @@ const blank: AttentionProblem = {
     { source: "probe", detail: "The package has a live process and the window is open on display 4." },
   ],
   recommendation:
-    "Retry the launch first: DroidWin closes this window and opens org.example.game again on a fresh display.",
+    "Retry the launch first: WINAPK closes this window and opens org.example.game again on a fresh display.",
   recovery: { kind: "retry_launch", package_id: "org.example.game" },
   alternatives: [{ kind: "reinstall_package", package_id: "org.example.game" }],
 };
@@ -33,11 +33,11 @@ const capture: AttentionProblem = {
   package_id: "org.fdroid.fdroid",
   severity: "degraded",
   confidence: "suspected",
-  title: "DroidWin could not capture org.fdroid.fdroid's display",
+  title: "WINAPK could not capture org.fdroid.fdroid's display",
   observed:
     "The window is open on display 3, but its screenshot failed, so whether it renders correctly is unknown.",
   evidence: [{ source: "probe", detail: "Android did not return an image for display 3." }],
-  recommendation: "Reopen this app's window so DroidWin recreates its display.",
+  recommendation: "Reopen this app's window so WINAPK recreates its display.",
   recovery: { kind: "reopen_window", package_id: "org.fdroid.fdroid" },
 };
 

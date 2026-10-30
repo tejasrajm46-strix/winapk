@@ -227,7 +227,7 @@ export function Agent(props: ScreenProps) {
             </div>
             <p className="note__body">
               An agent can read visible app content, including personal data, and send taps or
-              text to the focused display. DroidWin logs every action but cannot tell which taps
+              text to the focused display. WINAPK logs every action but cannot tell which taps
               are consequential; stop the endpoint when you are done.
             </p>
           </div>
@@ -330,7 +330,7 @@ export function Agent(props: ScreenProps) {
             <div className="panel__body">
               <EmptyState
                 title="No skills installed"
-                body="Install a folder that contains a SKILL.md with name and description frontmatter. Files stay in DroidWin's data directory; nothing is downloaded."
+                body="Install a folder that contains a SKILL.md with name and description frontmatter. Files stay in WINAPK's data directory; nothing is downloaded."
               />
             </div>
           )}

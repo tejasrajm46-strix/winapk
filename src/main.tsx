@@ -6,7 +6,7 @@ import "./styles/base.css";
 import "./styles/overlay.css";
 
 const container = document.getElementById("root");
-if (!container) throw new Error("DroidWin root element is missing");
+if (!container) throw new Error("WINAPK root element is missing");
 
 /**
  * One HTML entry point, three windows. The label the Rust side gave this webview

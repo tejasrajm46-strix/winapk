@@ -147,7 +147,7 @@ function Group({
 }
 
 /**
- * "Attention Needed": problems DroidWin observed itself, split into what is
+ * "Attention Needed": problems WINAPK observed itself, split into what is
  * confirmed and what is only a suspicion, each with its evidence and the most
  * targeted recovery available. A full restart is only ever offered as a labelled
  * last resort.
@@ -173,7 +173,7 @@ export function AttentionPanel({
       note={
         report
           ? `Checked ${checkedAt?.toLocaleTimeString() ?? ""}${report.deep ? " · full check with screenshots" : " · quick check"}`
-          : "DroidWin has not run a check in this session yet."
+          : "WINAPK has not run a check in this session yet."
       }
       action={
         <div className="inline">
@@ -205,7 +205,7 @@ export function AttentionPanel({
               <strong>{report.suspected}</strong> suspected
             </span>
             <span className="muted">
-              Confirmed means DroidWin measured it. Suspected means it could not observe enough to
+              Confirmed means WINAPK measured it. Suspected means it could not observe enough to
               be sure.
             </span>
           </div>
@@ -219,7 +219,7 @@ export function AttentionPanel({
           />
           <Group
             title="Suspected"
-            note="A clue DroidWin could not confirm — not a diagnosis yet."
+            note="A clue WINAPK could not confirm — not a diagnosis yet."
             problems={suspected}
             busy={busy}
             onRecover={onRecover}

@@ -1,12 +1,12 @@
 # Automatic Android runtime setup
 
-DroidWin needs an Android runtime and does not ship one. Before this change a new
+WINAPK needs an Android runtime and does not ship one. Before this change a new
 user had to install Android Studio (or the SDK command-line tools), accept
 Google's licences, install `platform-tools`, `emulator` and a system image, and
 set `ANDROID_SDK_ROOT` — a development setup, asked of someone who wants to play
 a game.
 
-This document describes what DroidWin installs itself, where it puts it, what it
+This document describes what WINAPK installs itself, where it puts it, what it
 refuses to do, and exactly which parts were exercised on the development machine.
 
 ---
@@ -40,7 +40,7 @@ lives in the AVD home).
 3. an existing SDK: `ANDROID_SDK_ROOT`, `ANDROID_HOME`, `%LOCALAPPDATA%\Android\Sdk`,
    `%USERPROFILE%\AppData\Local\Android\Sdk`, `C:\Android\Sdk` — the most complete
    one wins,
-4. DroidWin's own directory: `%APPDATA%\app.droidwin.desktop\android-sdk`, or
+4. WINAPK's own directory: `%APPDATA%\app.droidwin.desktop\android-sdk`, or
    `$DROIDWIN_HOME/android-sdk`.
 
 A directory named in (1) or (2) is used even when it is empty, because it is a
@@ -57,17 +57,17 @@ The setup screen, the installer and the runtime all resolve this root through
 `src/screens/Setup.tsx` replaces the shell while the runtime is not installed
 (`needs_install` or `failed`). It shows:
 
-- every component DroidWin checked, whether it is present, where it is, and the
+- every component WINAPK checked, whether it is present, where it is, and the
   download size of a missing one (sizes are the published archive sizes, and the
   screen calls the total "about");
 - the SDK directory and the free space on that volume;
 - a licence checkbox — **the install button stays disabled until it is ticked**,
   unless the licences were already accepted by a previous run;
 - real progress: a percentage when a transfer length is known (the JRE and the
-  command-line tools are downloaded by DroidWin itself), an indeterminate bar for
+  command-line tools are downloaded by WINAPK itself), an indeterminate bar for
   the SDK manager, whose output is only forwarded as text;
 - Cancel (a cooperative flag the downloader and every spawned tool check), Retry,
-  **Choose folder**, **Use DroidWin's folder**, Check again, and *Open DroidWin
+  **Choose folder**, **Use WINAPK's folder**, Check again, and *Open WINAPK
   anyway* so nobody is trapped on the screen.
 
 States are `needs_install → installing → starting | failed → ready`. The gate
@@ -82,7 +82,7 @@ The setup screen states that the Android SDK licence terms are being accepted, a
 the checkbox is required. The install then runs `sdkmanager --licenses` with `y`
 answers on stdin and records the result in `<sdk>/licenses/android-sdk-license`.
 If the prompt does not exit 0, the install fails with that reason and
-`runtime.licenses_accepted` is not set. DroidWin never writes a licence hash
+`runtime.licenses_accepted` is not set. WINAPK never writes a licence hash
 itself.
 
 ## 5. Security of the download path
@@ -109,9 +109,9 @@ itself.
 - starting one writes its pid to `<data>/runtime/emulator.pid`;
 - a later run that finds that pid and confirms the process is still
   `emulator.exe` adopts it as owned (a recycled pid is never acted on);
-- closing DroidWin closes every app window and stops an emulator **only if it is
+- closing WINAPK closes every app window and stops an emulator **only if it is
   owned**; an emulator the user started themselves is left running;
-- **Settings → Android runtime → Keep the emulator running after DroidWin closes**
+- **Settings → Android runtime → Keep the emulator running after WINAPK closes**
   skips the stop and deletes the marker, so the next run treats it as external;
 - **Stop runtime** on the Runtime screen always stops an owned emulator,
   regardless of that preference.
@@ -162,7 +162,7 @@ creation, validation and boot, with no download.
 **First-run screen** — the release build launched with an empty SDK directory
 shows *"Set up Android"*, `NOT INSTALLED`, the five components with their sizes,
 the licence checkbox, a disabled **Install Android runtime** button and *Open
-DroidWin anyway* (`.droidwin/setup-screen.png`).
+WINAPK anyway* (`.droidwin/setup-screen.png`).
 
 **After the install** — the same build launched against the freshly installed SDK
 opens the normal shell with **RUNTIME READY · API 36**, boots the emulator and
@@ -184,7 +184,7 @@ suites are green after these changes.
 - Downloads need the internet and about 6 GB of free space. There is no offline
   installer and no bundled image.
 - The system image is fixed to `android-36;google_apis;x86_64`. ARM Windows and
-  32-bit Windows are not supported, and a Google Play image is not used (DroidWin
+  32-bit Windows are not supported, and a Google Play image is not used (WINAPK
   needs `adb root` for its loopback containment, which a Play image refuses).
 - The command-line tools version is whatever Google's repository lists; the
   installer parses that XML rather than pinning a filename. If Google removes the
@@ -193,8 +193,8 @@ suites are green after these changes.
 - The SDK manager's own progress is text, not a percentage, so the bar is
   indeterminate for those steps.
 - Package downloads are not resumed inside a package; a retry re-downloads that
-  package. Downloads DroidWin makes itself (JRE, tools) do resume once.
+  package. Downloads WINAPK makes itself (JRE, tools) do resume once.
 - A JRE is installed only when none is found. An unsupported Java version already
   on the machine (for example a JRE 8 in `JAVA_HOME`) would make `sdkmanager` fail;
-  the error is reported, but DroidWin does not detect the version and fall back to
+  the error is reported, but WINAPK does not detect the version and fall back to
   its own JRE.

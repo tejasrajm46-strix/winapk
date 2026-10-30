@@ -22,11 +22,11 @@ import { PageHead, type ScreenProps } from "./common";
 import { PhoneVideo } from "../phoneVideo";
 
 /**
- * The virtual phone: Android's own display, inside DroidWin.
+ * The virtual phone: Android's own display, inside WINAPK.
  *
- * It is the emulator DroidWin already runs, mirrored — device display 0, the
+ * It is the emulator WINAPK already runs, mirrored — device display 0, the
  * launcher, the notification shade and Android's settings, which is the one
- * display DroidWin did not create for an app. No second emulator and no
+ * display WINAPK did not create for an app. No second emulator and no
  * placeholder wallpaper are involved: every pixel here came from a capture
  * Android produced, and every touch and keystroke goes back to it.
  *
@@ -231,6 +231,10 @@ function PhoneFrame({ props }: { props: ScreenProps }) {
     let dimensionsTimer: number | undefined;
     let dimensions: { width: number; height: number } | null = null;
     let decodedSize: { width: number; height: number } | null = null;
+    // The live state only changes once per stream. Repeating the setters from
+    // every decoded frame makes React compare two identical values 60 times a
+    // second for no visible result.
+    let reported = false;
     const id = `phone-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
     // A restart keeps the picture that is already there instead of blanking the
     // panel for the second the new stream takes to reach its first frame.
@@ -250,13 +254,14 @@ function PhoneFrame({ props }: { props: ScreenProps }) {
       setError({ code: "runtime_unavailable", summary: "Live phone video is unavailable; showing still captures instead.", detail: message });
     };
     const player = new PhoneVideo(canvas, (width, height) => {
-      if (cancelled) return;
+      if (cancelled || reported) return;
       liveOnce.current = true;
       decodedSize = { width, height };
       if (dimensions && ((width > height) === (dimensions.width > dimensions.height))) {
         setVideoSize(dimensions);
         setVideoMode("live");
         window.clearTimeout(timeout);
+        reported = true;
       }
     }, (err) => fail(err.message));
     const refreshDimensions = async () => {
@@ -276,7 +281,10 @@ function PhoneFrame({ props }: { props: ScreenProps }) {
       } catch (err) { fail(backend.toDwError(err).summary); }
     };
     void refreshDimensions();
-    dimensionsTimer = window.setInterval(() => void refreshDimensions(), 2_000);
+    // Rotation is rare and costs a heavy `dumpsys display`; checking every two
+    // seconds spent adb work on a picture that had not changed. Five seconds
+    // still catches a rotation long before a user would call it stuck.
+    dimensionsTimer = window.setInterval(() => void refreshDimensions(), 5_000);
     timeout = window.setTimeout(() => fail("The video decoder did not produce a frame within 10 seconds."), 10_000);
     void backend.startPhoneStream(id, (data) => {
       if (cancelled) return;
@@ -652,7 +660,7 @@ function PhoneFrame({ props }: { props: ScreenProps }) {
         <p className="phone__hint">
           Click to tap, drag to swipe. Type to search or fill a field; Enter opens, Escape is Back,
           Home returns to the launcher, Tab and the arrows move the selection, Backspace deletes.
-          Ctrl+letter shortcuts still belong to DroidWin.
+          Ctrl+letter shortcuts still belong to WINAPK.
         </p>
         {saved && (
           <div className="phone__saved" role="status">
@@ -799,8 +807,8 @@ function Installations({ props }: { props: ScreenProps }) {
       title="Installations"
       note={
         props.opRunning
-          ? "An installation is running; these are the stages DroidWin has reported."
-          : "The last packages DroidWin installed."
+          ? "An installation is running; these are the stages WINAPK has reported."
+          : "The last packages WINAPK installed."
       }
     >
       {props.stages.length > 0 ? (
@@ -892,8 +900,8 @@ export function Phone(props: ScreenProps) {
     <div className="page">
       <PageHead
         eyebrow="Virtual phone"
-        title="Android, inside DroidWin"
-        lede="The runtime's own phone screen, the apps it has installed, and what DroidWin is installing."
+        title="Android, inside WINAPK"
+        lede="The runtime's own phone screen, the apps it has installed, and what WINAPK is installing."
       >
         <Button variant="secondary" onClick={() => props.onNavigate("applications")}>
           Library
@@ -924,7 +932,7 @@ export function Phone(props: ScreenProps) {
 }
 
 /**
- * What DroidWin can measure, and nothing else. Every value comes from the
+ * What WINAPK can measure, and nothing else. Every value comes from the
  * hardware report or from recorded operation times; a value the backend did not
  * report is shown as not measured, never as a guess.
  */
@@ -967,7 +975,7 @@ function Performance({ props }: { props: ScreenProps }) {
     ],
     [
       "Last install",
-      last != null ? `${(last / 1000).toFixed(1)} s (from DroidWin's record)` : "no install recorded",
+      last != null ? `${(last / 1000).toFixed(1)} s (from WINAPK's record)` : "no install recorded",
     ],
   ];
 

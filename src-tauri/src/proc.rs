@@ -1,6 +1,6 @@
 //! Child-process creation policy.
 //!
-//! DroidWin is a GUI-subsystem program. On Windows, spawning a console program
+//! WINAPK is a GUI-subsystem program. On Windows, spawning a console program
 //! from a GUI process without `CREATE_NO_WINDOW` makes the OS allocate a console
 //! for it — a black window that flashes for every `adb`, `aapt2`, `taskkill` or
 //! `scrcpy` invocation. Because the runtime polls, that looked like windows
@@ -36,9 +36,9 @@ pub fn no_console_async(cmd: &mut tokio::process::Command) {
 
 /// The executable name of a running process, e.g. `emulator.exe`.
 ///
-/// Used to confirm that a process id DroidWin wrote to disk is still the
+/// Used to confirm that a process id WINAPK wrote to disk is still the
 /// emulator it started, and not a recycled id belonging to something else. A
-/// process DroidWin may not open answers `None`, which callers must treat as
+/// process WINAPK may not open answers `None`, which callers must treat as
 /// "not ours".
 #[cfg(windows)]
 pub fn image_name(pid: u32) -> Option<String> {
@@ -84,6 +84,259 @@ pub fn image_name(pid: u32) -> Option<String> {
 #[cfg(not(windows))]
 pub fn image_name(_pid: u32) -> Option<String> {
     None
+}
+
+/// The window with keyboard focus, as a raw handle, for identity checks.
+#[cfg(windows)]
+pub fn foreground_hwnd() -> Option<isize> {
+    win::foreground().map(|hwnd| hwnd as isize)
+}
+
+#[cfg(not(windows))]
+pub fn foreground_hwnd() -> Option<isize> {
+    None
+}
+
+/// The client rectangle (screen x, screen y, width, height) of the largest
+/// visible top-level window a process owns, excluding its title bar and borders.
+#[cfg(windows)]
+pub fn client_rect(pid: u32) -> Option<(i32, i32, u32, u32)> {
+    win::client_rect(pid)
+}
+
+#[cfg(not(windows))]
+pub fn client_rect(_pid: u32) -> Option<(i32, i32, u32, u32)> {
+    None
+}
+
+/// The largest visible top-level window a process owns, as a raw handle.
+///
+/// scrcpy creates exactly one window per instance, so "largest" is a safe
+/// choice even while a transient SDL message box exists. `None` means the
+/// process has not created its window yet (or has already gone).
+#[cfg(windows)]
+pub fn window_for_pid(pid: u32) -> Option<isize> {
+    win::largest_window(pid).map(|hwnd| hwnd as isize)
+}
+
+#[cfg(not(windows))]
+pub fn window_for_pid(_pid: u32) -> Option<isize> {
+    None
+}
+
+/// Hide a window without destroying it. The recording host keeps decoding and
+/// writing while hidden; only its painting stops.
+#[cfg(windows)]
+pub fn hide_window(hwnd: isize) {
+    win::show(hwnd as win::Hwnd, win::HIDE);
+}
+
+#[cfg(not(windows))]
+pub fn hide_window(_hwnd: isize) {}
+
+/// Ask a window to close the way its own close button would, so the process can
+/// flush what it is writing (an MP4 muxer needs its trailer).
+#[cfg(windows)]
+pub fn close_window(hwnd: isize) {
+    win::post_close(hwnd as win::Hwnd);
+}
+
+#[cfg(not(windows))]
+pub fn close_window(_hwnd: isize) {}
+
+/// The client (content) size of a window, in physical pixels.
+#[cfg(windows)]
+pub fn client_size(hwnd: isize) -> Option<(u32, u32)> {
+    win::client_size(hwnd as win::Hwnd)
+}
+
+#[cfg(not(windows))]
+pub fn client_size(_hwnd: isize) -> Option<(u32, u32)> {
+    None
+}
+
+/// Resize a window so its *client area* is exactly `width` by `height`.
+///
+/// The window host picks its own initial size (scrcpy caps a virtual display
+/// window at a fraction of the desktop), so a requested geometry is only true
+/// once the frame has been set. Borders and the title bar are added from the
+/// window's own measurements rather than guessed.
+#[cfg(windows)]
+pub fn resize_client(hwnd: isize, width: u32, height: u32) -> bool {
+    win::resize_client(hwnd as win::Hwnd, width, height)
+}
+
+#[cfg(not(windows))]
+pub fn resize_client(_hwnd: isize, _width: u32, _height: u32) -> bool {
+    false
+}
+
+#[cfg(windows)]
+mod win {
+    pub type Hwnd = *mut std::ffi::c_void;
+
+    #[repr(C)]
+    #[derive(Default, Clone, Copy)]
+    pub struct Rect {
+        pub left: i32,
+        pub top: i32,
+        pub right: i32,
+        pub bottom: i32,
+    }
+
+    #[repr(C)]
+    #[derive(Default, Clone, Copy)]
+    pub struct Point {
+        pub x: i32,
+        pub y: i32,
+    }
+
+    const SWP_NOMOVE: u32 = 0x0002;
+    const SWP_NOZORDER: u32 = 0x0004;
+    const SWP_NOACTIVATE: u32 = 0x0010;
+    const WM_CLOSE: u32 = 0x0010;
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn EnumWindows(callback: extern "system" fn(Hwnd, isize) -> i32, lparam: isize) -> i32;
+        fn GetWindowThreadProcessId(hwnd: Hwnd, pid: *mut u32) -> u32;
+        fn IsWindowVisible(hwnd: Hwnd) -> i32;
+        fn GetWindowRect(hwnd: Hwnd, rect: *mut Rect) -> i32;
+        fn GetClientRect(hwnd: Hwnd, rect: *mut Rect) -> i32;
+        fn ClientToScreen(hwnd: Hwnd, point: *mut Point) -> i32;
+        fn GetForegroundWindow() -> Hwnd;
+        fn IsIconic(hwnd: Hwnd) -> i32;
+        fn SetWindowPos(
+            hwnd: Hwnd,
+            after: Hwnd,
+            x: i32,
+            y: i32,
+            width: i32,
+            height: i32,
+            flags: u32,
+        ) -> i32;
+        fn ShowWindow(hwnd: Hwnd, command: i32) -> i32;
+        fn PostMessageW(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i32;
+    }
+
+    /// `SW_HIDE`: keep the window, stop showing it.
+    pub const HIDE: i32 = 0;
+
+    struct Search {
+        pid: u32,
+        best: Option<(Hwnd, u64)>,
+    }
+
+    extern "system" fn visit(hwnd: Hwnd, lparam: isize) -> i32 {
+        let search = unsafe { &mut *(lparam as *mut Search) };
+        let mut pid = 0u32;
+        unsafe {
+            if GetWindowThreadProcessId(hwnd, &mut pid) == 0
+                || pid != search.pid
+                || IsWindowVisible(hwnd) == 0
+            {
+                return 1;
+            }
+            let mut rect = Rect::default();
+            if GetWindowRect(hwnd, &mut rect) == 0 {
+                return 1;
+            }
+            let area =
+                (rect.right - rect.left).max(0) as u64 * (rect.bottom - rect.top).max(0) as u64;
+            if area > search.best.map(|(_, best)| best).unwrap_or(0) {
+                search.best = Some((hwnd, area));
+            }
+        }
+        1
+    }
+
+    pub fn largest_window(pid: u32) -> Option<Hwnd> {
+        let mut search = Search { pid, best: None };
+        unsafe {
+            EnumWindows(visit, &mut search as *mut Search as isize);
+        }
+        search.best.map(|(hwnd, _)| hwnd)
+    }
+
+    pub fn foreground() -> Option<Hwnd> {
+        let hwnd = unsafe { GetForegroundWindow() };
+        (!hwnd.is_null()).then_some(hwnd)
+    }
+
+    /// The client rectangle in screen coordinates. Minimised windows are
+    /// skipped: their client rect is not where the window is drawn.
+    pub fn client_rect(pid: u32) -> Option<(i32, i32, u32, u32)> {
+        let hwnd = largest_window(pid)?;
+        unsafe {
+            if IsIconic(hwnd) != 0 {
+                return None;
+            }
+            let mut client = Rect::default();
+            if GetClientRect(hwnd, &mut client) == 0 {
+                return None;
+            }
+            let width = (client.right - client.left).max(0) as u32;
+            let height = (client.bottom - client.top).max(0) as u32;
+            if width < 2 || height < 2 {
+                return None;
+            }
+            let mut origin = Point::default();
+            if ClientToScreen(hwnd, &mut origin) == 0 {
+                return None;
+            }
+            Some((origin.x, origin.y, width, height))
+        }
+    }
+
+    pub fn show(hwnd: Hwnd, command: i32) {
+        unsafe {
+            ShowWindow(hwnd, command);
+        }
+    }
+
+    pub fn post_close(hwnd: Hwnd) {
+        unsafe {
+            PostMessageW(hwnd, WM_CLOSE, 0, 0);
+        }
+    }
+
+    pub fn client_size(hwnd: Hwnd) -> Option<(u32, u32)> {
+        let mut rect = Rect::default();
+        if unsafe { GetClientRect(hwnd, &mut rect) } == 0 {
+            return None;
+        }
+        Some((
+            (rect.right - rect.left).max(0) as u32,
+            (rect.bottom - rect.top).max(0) as u32,
+        ))
+    }
+
+    pub fn resize_client(hwnd: Hwnd, width: u32, height: u32) -> bool {
+        if width < 2 || height < 2 {
+            return false;
+        }
+        let (mut window_rect, mut client_rect) = (Rect::default(), Rect::default());
+        if unsafe { GetWindowRect(hwnd, &mut window_rect) } == 0
+            || unsafe { GetClientRect(hwnd, &mut client_rect) } == 0
+        {
+            return false;
+        }
+        let extra_width =
+            (window_rect.right - window_rect.left) - (client_rect.right - client_rect.left);
+        let extra_height =
+            (window_rect.bottom - window_rect.top) - (client_rect.bottom - client_rect.top);
+        unsafe {
+            SetWindowPos(
+                hwnd,
+                std::ptr::null_mut(),
+                0,
+                0,
+                width as i32 + extra_width,
+                height as i32 + extra_height,
+                SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
+            ) != 0
+        }
+    }
 }
 
 #[cfg(test)]

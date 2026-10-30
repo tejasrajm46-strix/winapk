@@ -113,7 +113,7 @@ fn display_prop() -> (&'static str, Value) {
 fn package_prop() -> (&'static str, Value) {
     (
         "package_id",
-        text("Package id of an app DroidWin has open, e.g. org.fdroid.fdroid."),
+        text("Package id of an app WINAPK has open, e.g. org.fdroid.fdroid."),
     )
 }
 
@@ -182,7 +182,7 @@ pub fn tools() -> Vec<Tool> {
         Tool::new(
             "list_devices",
             "List devices",
-            "Android devices adb can see, marking the emulator DroidWin manages.",
+            "Android devices adb can see, marking the emulator WINAPK manages.",
             false,
             20_000,
         ),
@@ -196,7 +196,7 @@ pub fn tools() -> Vec<Tool> {
         Tool::new(
             "get_app_info",
             "App information",
-            "Find one installed package and its current DroidWin window and display, if open.",
+            "Find one installed package and its current WINAPK window and display, if open.",
             false,
             40_000,
         )
@@ -205,7 +205,7 @@ pub fn tools() -> Vec<Tool> {
         Tool::new(
             "open_app",
             "Open app",
-            "Open an installed app in its own DroidWin window, which creates a virtual Android display for it. Returns the display id input must target. Opening an app that is already open returns the existing window instead of a second one.",
+            "Open an installed app in its own WINAPK window, which creates a virtual Android display for it. Returns the display id input must target. Opening an app that is already open returns the existing window instead of a second one.",
             true,
             90_000,
         )
@@ -223,7 +223,7 @@ pub fn tools() -> Vec<Tool> {
         Tool::new(
             "get_active_window",
             "Active windows",
-            "Every open DroidWin window with its package, window process and display id.",
+            "Every open WINAPK window with its package, window process and display id.",
             false,
             10_000,
         )
@@ -425,7 +425,7 @@ pub fn tools() -> Vec<Tool> {
                 "properties": {
                     "foreground_package": text("Package that should be on screen."),
                     "app_running": text("Package that should have a process."),
-                    "window_open": text("Package whose DroidWin window should be open."),
+                    "window_open": text("Package whose WINAPK window should be open."),
                     "element_present": selector_schema(),
                     "element_absent": selector_schema()
                 },
@@ -445,14 +445,14 @@ pub fn tools() -> Vec<Tool> {
         Tool::new(
             "get_runtime_stats",
             "Runtime stats",
-            "Measured host and guest resource use: DroidWin's and the emulator's working set and CPU time, Android's vCPUs and free memory, and the renderer Android reports.",
+            "Measured host and guest resource use: WINAPK's and the emulator's working set and CPU time, Android's vCPUs and free memory, and the renderer Android reports.",
             false,
             40_000,
         ),
         Tool::new(
             "run_workflow",
             "Run workflow",
-            "Run several actions in order and report, for each one, whether it was dispatched, what DroidWin observed afterwards, and whether that observation met the expectation you gave. Stops at the first step that cannot be dispatched.",
+            "Run several actions in order and report, for each one, whether it was dispatched, what WINAPK observed afterwards, and whether that observation met the expectation you gave. Stops at the first step that cannot be dispatched.",
             true,
             180_000,
         )
@@ -515,7 +515,7 @@ pub fn tools() -> Vec<Tool> {
         Tool::new(
             "get_app_events",
             "App events",
-            "App lifecycle events DroidWin detected (window opened, closed, crashed) and runtime failures, with the triggers each one fired. This is the detector's own feed, not a screenshot interpretation.",
+            "App lifecycle events WINAPK detected (window opened, closed, crashed) and runtime failures, with the triggers each one fired. This is the detector's own feed, not a screenshot interpretation.",
             false,
             10_000,
         )
@@ -523,7 +523,7 @@ pub fn tools() -> Vec<Tool> {
         Tool::new(
             "list_skills",
             "List skills",
-            "Installed DroidWin skills: reusable instructions for automating an app.",
+            "Installed WINAPK skills: reusable instructions for automating an app.",
             false,
             8_000,
         ),
@@ -585,10 +585,10 @@ pub async fn handle(state: &Arc<AgentState>, message: &Value) -> Option<Value> {
                     "capabilities": { "tools": { "listChanged": false } },
                     "serverInfo": {
                         "name": "droidwin",
-                        "title": "DroidWin Android control",
+                        "title": "WINAPK Android control",
                         "version": env!("CARGO_PKG_VERSION")
                     },
-                    "instructions": "DroidWin runs Android apps in their own desktop windows. Call get_runtime_status first, open_app to give an app a window and a display id, then act on that display. Every action is display-scoped: an app window is a virtual Android display, so an unscoped tap lands on the wrong screen. Use get_screen_state to look, verify_action to check, and wait_for_element for screens that animate."
+                    "instructions": "WINAPK runs Android apps in their own desktop windows. Call get_runtime_status first, open_app to give an app a window and a display id, then act on that display. Every action is display-scoped: an app window is a virtual Android display, so an unscoped tap lands on the wrong screen. Use get_screen_state to look, verify_action to check, and wait_for_element for screens that animate."
                 }),
             ))
         }
@@ -647,7 +647,7 @@ async fn call_tool(state: &Arc<AgentState>, id: Value, params: &Value) -> Value 
                 name,
                 &DwError::new(
                     ErrorCode::AutomationPaused,
-                    "Automation is paused in DroidWin.",
+                    "Automation is paused in WINAPK.",
                 )
                 .detail(
                     "The person at the desktop paused agent control. Read-only tools still work.",
@@ -662,9 +662,9 @@ async fn call_tool(state: &Arc<AgentState>, id: Value, params: &Value) -> Value 
                 name,
                 &DwError::new(
                     ErrorCode::PermissionDenied,
-                    "DroidWin is in read-only mode for agents.",
+                    "WINAPK is in read-only mode for agents.",
                 )
-                .detail("Allow control in DroidWin's Agent screen to send input or change apps."),
+                .detail("Allow control in WINAPK's Agent screen to send input or change apps."),
                 0,
             );
         }

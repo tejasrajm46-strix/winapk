@@ -31,6 +31,9 @@ export interface ScreenProps {
   /** Shared with the top bar, so search survives a screen change. */
   appQuery: string;
   onAppQueryChange: (value: string) => void;
+  /** The user's display name, owned by the shell and edited in Settings. */
+  appName: string;
+  onAppNameChange: (name: string) => void;
   onNavigate: (screen: ScreenId) => void;
   onRefresh: () => void;
   onStartRuntime: () => void;

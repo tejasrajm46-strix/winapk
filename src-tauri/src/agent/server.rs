@@ -202,7 +202,7 @@ async fn serve_cli(
                     "command": command,
                     "error": {
                         "code": "automation_paused",
-                        "summary": "Automation is paused in DroidWin.",
+                        "summary": "Automation is paused in WINAPK.",
                         "detail": "Read-only commands still work. Resume automation in the Agent screen to use this one."
                     }
                 }),
@@ -218,8 +218,8 @@ async fn serve_cli(
                     "command": command,
                     "error": {
                         "code": "permission_denied",
-                        "summary": "DroidWin is in read-only mode for agents.",
-                        "detail": "Allow control in DroidWin's Agent screen to use this command."
+                        "summary": "WINAPK is in read-only mode for agents.",
+                        "detail": "Allow control in WINAPK's Agent screen to use this command."
                     }
                 }),
             )

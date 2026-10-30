@@ -1,6 +1,6 @@
 //! The control overlay over a managed app window.
 //!
-//! scrcpy owns the window an app runs in, so DroidWin cannot draw inside it.
+//! scrcpy owns the window an app runs in, so WINAPK cannot draw inside it.
 //! Instead this module anchors its own windows to that window's client
 //! rectangle:
 //!
@@ -9,7 +9,7 @@
 //!   shows and hides. Being click-through is the point: while it is visible the
 //!   game still receives every click that is not on a label chip.
 //! - `overlay-nav` is an interactive bar along the bottom edge with Android's
-//!   Back, Home and recent-apps keys. Its clicks go to DroidWin, never to the
+//!   Back, Home and recent-apps keys. Its clicks go to WINAPK, never to the
 //!   game, and it is not focusable, so pressing `Ctrl+Shift+R` still reaches the
 //!   hook.
 //! - `overlay-rail` is the vertical action strip on the right edge: screenshot,
@@ -205,7 +205,7 @@ impl Overlay {
         let labels = match build_window(
             &self.app,
             LABELS_WINDOW,
-            "DroidWin mapping overlay",
+            "WINAPK mapping overlay",
             true,
             false,
         ) {
@@ -215,14 +215,14 @@ impl Overlay {
                 None
             }
         };
-        let nav = match build_window(&self.app, NAV_WINDOW, "DroidWin controls", false, false) {
+        let nav = match build_window(&self.app, NAV_WINDOW, "WINAPK controls", false, false) {
             Ok(window) => Some(window),
             Err(err) => {
                 self.fail(format!("The control bar could not be created: {err}"));
                 None
             }
         };
-        let rail = match build_window(&self.app, RAIL_WINDOW, "DroidWin actions", false, false) {
+        let rail = match build_window(&self.app, RAIL_WINDOW, "WINAPK actions", false, false) {
             Ok(window) => Some(window),
             Err(err) => {
                 self.fail(format!("The action rail could not be created: {err}"));
@@ -231,7 +231,7 @@ impl Overlay {
         };
         // The mapping panel takes the keyboard (it captures the key being
         // assigned), so unlike the other two it is focusable.
-        let mapper = match build_window(&self.app, MAPPER_WINDOW, "DroidWin key mapping", false, true)
+        let mapper = match build_window(&self.app, MAPPER_WINDOW, "WINAPK key mapping", false, true)
         {
             Ok(window) => Some(window),
             Err(err) => {
@@ -315,7 +315,7 @@ impl Overlay {
         self.runtime.package_for_pid(pid)
     }
 
-    /// Whether the user is working inside DroidWin's own controls rather than
+    /// Whether the user is working inside WINAPK's own controls rather than
     /// in another application.
     ///
     /// A click on the mapping panel activates it, so the foreground is no longer
@@ -329,7 +329,7 @@ impl Overlay {
             return false;
         }
         if let Some(Ok(main)) = self.app.get_webview_window("main").map(|w| w.hwnd()) {
-            if win::foreground_hwnd() == Some(main.0 as isize) {
+            if crate::proc::foreground_hwnd() == Some(main.0 as isize) {
                 return false;
             }
         }
@@ -337,7 +337,15 @@ impl Overlay {
     }
 
     fn window_rect(pid: u32) -> Option<Rect> {
-        win::client_rect(pid)
+        // One implementation of the Win32 window lookups lives in `proc`, so
+        // the recorder and the overlay cannot disagree about which window a
+        // process owns.
+        crate::proc::client_rect(pid).map(|(x, y, width, height)| Rect {
+            x,
+            y,
+            width,
+            height,
+        })
     }
 
     /// The bottom-right corner of the monitor the app window is on.
@@ -404,8 +412,7 @@ impl Overlay {
             self.detach();
             return;
         }
-        let focused =
-            foreground.as_deref() == Some(package.as_str()) || self.overlay_has_focus();
+        let focused = foreground.as_deref() == Some(package.as_str()) || self.overlay_has_focus();
         {
             let mut state = self.lock();
             state.foreground = focused;
@@ -763,7 +770,7 @@ impl Overlay {
     /// Arm click-to-place for the window in front.
     ///
     /// The panel steps aside and its label window stops being click-through, so
-    /// the very next click on the game picture is DroidWin's to keep. That click
+    /// the very next click on the game picture is WINAPK's to keep. That click
     /// becomes the mapping point; the panel returns with it and waits for a key.
     pub fn begin_place(self: &Arc<Self>, package: String) -> DwResult<OverlayStatus> {
         if self.windows().and_then(|windows| windows.labels).is_none() {
@@ -879,7 +886,7 @@ impl Overlay {
                 ErrorCode::LaunchFailed,
                 "Android has not reported a display for that window.",
             )
-            .detail("Open the app in DroidWin first, then use the bar again.")
+            .detail("Open the app in WINAPK first, then use the bar again.")
         })?;
         self.runtime.key_on_display(display, keycode).await
     }
@@ -924,112 +931,6 @@ fn build_window(
         let _ = window.set_ignore_cursor_events(true);
     }
     Ok(window)
-}    /// The client rectangle of the largest visible top-level window a process owns.
-/// That is the scrcpy window: its title bar and borders are excluded, so an
-/// overlay anchored here lines up with the video.
-#[cfg(windows)]
-mod win {
-    use std::ffi::c_void;
-
-    pub type Hwnd = *mut c_void;
-
-    #[repr(C)]
-    #[derive(Default)]
-    pub struct WinRect {
-        pub left: i32,
-        pub top: i32,
-        pub right: i32,
-        pub bottom: i32,
-    }
-
-    #[repr(C)]
-    #[derive(Default)]
-    pub struct Point {
-        pub x: i32,
-        pub y: i32,
-    }
-
-    pub struct Search {
-        pub pid: u32,
-        pub best: Option<super::Rect>,
-    }
-
-    /// The window with keyboard focus, as a raw handle, for identity checks.
-    pub fn foreground_hwnd() -> Option<isize> {
-        let hwnd = unsafe { GetForegroundWindow() };
-        (!hwnd.is_null()).then_some(hwnd as isize)
-    }
-
-    #[link(name = "user32")]
-    extern "system" {
-        fn EnumWindows(callback: extern "system" fn(Hwnd, isize) -> i32, lparam: isize) -> i32;
-        fn GetWindowThreadProcessId(hwnd: Hwnd, pid: *mut u32) -> u32;
-        fn IsWindowVisible(hwnd: Hwnd) -> i32;
-        fn IsIconic(hwnd: Hwnd) -> i32;
-        fn GetClientRect(hwnd: Hwnd, rect: *mut WinRect) -> i32;
-        fn ClientToScreen(hwnd: Hwnd, point: *mut Point) -> i32;
-        fn GetForegroundWindow() -> Hwnd;
-    }
-
-    extern "system" fn visit(hwnd: Hwnd, lparam: isize) -> i32 {
-        let search = unsafe { &mut *(lparam as *mut Search) };
-        let mut pid = 0u32;
-        unsafe {
-            if GetWindowThreadProcessId(hwnd, &mut pid) == 0
-                || pid != search.pid
-                || IsWindowVisible(hwnd) == 0
-                || IsIconic(hwnd) != 0
-            {
-                return 1;
-            }
-            let mut client = WinRect::default();
-            if GetClientRect(hwnd, &mut client) == 0 {
-                return 1;
-            }
-            let width = (client.right - client.left).max(0) as u32;
-            let height = (client.bottom - client.top).max(0) as u32;
-            if width < 2 || height < 2 {
-                return 1;
-            }
-            let mut origin = Point::default();
-            if ClientToScreen(hwnd, &mut origin) == 0 {
-                return 1;
-            }
-            let area = width as u64 * height as u64;
-            let best = search
-                .best
-                .map(|r| r.width as u64 * r.height as u64)
-                .unwrap_or(0);
-            if area > best {
-                search.best = Some(super::Rect {
-                    x: origin.x,
-                    y: origin.y,
-                    width,
-                    height,
-                });
-            }
-        }
-        1
-    }
-
-    pub fn client_rect(pid: u32) -> Option<super::Rect> {
-        let mut search = Search { pid, best: None };
-        unsafe {
-            EnumWindows(visit, &mut search as *mut Search as isize);
-        }
-        search.best
-    }
-}
-
-#[cfg(not(windows))]
-mod win {
-    pub fn client_rect(_pid: u32) -> Option<super::Rect> {
-        None
-    }
-
-    pub fn foreground_hwnd() -> Option<isize> {
-        None
-    }
 }
 
 #[tauri::command]
@@ -1120,9 +1021,7 @@ pub async fn overlay_place_at(
     x: f32,
     y: f32,
 ) -> Result<OverlayStatus, DwError> {
-    app.state::<AppState>()
-        .overlay
-        .place_at(&package_id, x, y)
+    app.state::<AppState>().overlay.place_at(&package_id, x, y)
 }
 
 #[tauri::command]

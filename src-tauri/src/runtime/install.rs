@@ -2,9 +2,9 @@
 //!
 //! A store-bought Windows PC has no Android SDK, and asking a player to install
 //! Android Studio first is asking them to install a development environment to
-//! play a game. This module installs only the four pieces DroidWin actually
+//! play a game. This module installs only the four pieces WINAPK actually
 //! runs on — command-line tools, platform-tools, the emulator and one system
-//! image — into DroidWin's own directory, then creates the virtual device.
+//! image — into WINAPK's own directory, then creates the virtual device.
 //!
 //! Every download comes from `dl.google.com` (the Android SDK repository) or
 //! Eclipse Adoptium (the JRE `sdkmanager` runs on), and the command-line tools
@@ -30,7 +30,7 @@ use crate::domain::{
 use crate::proc;
 use crate::store::Store;
 
-/// The Android version DroidWin runs apps on.
+/// The Android version WINAPK runs apps on.
 pub const API_LEVEL: u32 = 36;
 pub const PLATFORM_PACKAGE: &str = "platforms;android-36";
 pub const SYSTEM_IMAGE: &str = "system-images;android-36;google_apis;x86_64";
@@ -307,7 +307,7 @@ impl Setup {
                 id: "window-host".into(),
                 label: "Window host (scrcpy)".into(),
                 present: false,
-                detail: "Ships with DroidWin; reinstall the app to restore it.".into(),
+                detail: "Ships with WINAPK; reinstall the app to restore it.".into(),
                 download_mb: None,
                 required: true,
             });
@@ -350,7 +350,7 @@ impl Setup {
         };
 
         // The image this build installs is x86_64. Windows on ARM needs the
-        // arm64 emulator and image, which DroidWin does not fetch; saying so is
+        // arm64 emulator and image, which WINAPK does not fetch; saying so is
         // better than downloading 2.3 GB that cannot boot.
         let unsupported = if cfg!(target_arch = "x86_64") {
             None
@@ -366,7 +366,7 @@ impl Setup {
             _ if unsupported.is_some() => unsupported.clone().unwrap_or_default(),
             SetupState::Ready => {
                 if managed {
-                    "DroidWin installed this Android runtime and is using it.".to_string()
+                    "WINAPK installed this Android runtime and is using it.".to_string()
                 } else {
                     format!(
                         "Using the Android SDK already on this PC: {}",
@@ -376,7 +376,7 @@ impl Setup {
             }
             SetupState::Installing => "Installing the Android runtime.".to_string(),
             SetupState::Starting => {
-                "Android is installed. Starting the emulator; DroidWin calls the runtime ready \
+                "Android is installed. Starting the emulator; WINAPK calls the runtime ready \
                  only after adb sees Android finish booting."
                     .to_string()
             }
@@ -423,7 +423,7 @@ impl Setup {
     ///
     /// `consent` is the user's acceptance of the Android SDK licences. It is not
     /// a formality: the installer refuses to run without it, and the licence
-    /// prompt is the SDK manager's own, not a click DroidWin invents.
+    /// prompt is the SDK manager's own, not a click WINAPK invents.
     pub async fn run(&self, store: &Store, consent: bool) -> DwResult<()> {
         if self.running.swap(true, Ordering::SeqCst) {
             return Err(DwError::new(
@@ -488,7 +488,7 @@ impl Setup {
         let root = sdk::active_root().ok_or_else(|| {
             DwError::new(
                 ErrorCode::RuntimeNotConfigured,
-                "DroidWin has no directory to install the Android runtime into.",
+                "WINAPK has no directory to install the Android runtime into.",
             )
         })?;
         ensure_writable_root(&root)?;
@@ -766,7 +766,7 @@ impl Setup {
     }
 }
 
-/// The installation directory must be somewhere DroidWin may write: absolute,
+/// The installation directory must be somewhere WINAPK may write: absolute,
 /// not a drive root, not inside Windows. A path that fails here is refused
 /// rather than attempted.
 pub fn ensure_writable_root(root: &Path) -> DwResult<()> {
@@ -815,7 +815,7 @@ pub fn validate(root: &Path) -> DwResult<()> {
         missing.push(SYSTEM_IMAGE);
     }
     if !sdk::avd_exists(AVD_NAME) {
-        missing.push("the DroidWin virtual device");
+        missing.push("the WINAPK virtual device");
     }
     if missing.is_empty() {
         Ok(())

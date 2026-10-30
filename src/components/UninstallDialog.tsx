@@ -95,7 +95,7 @@ export function UninstallDialog({
         </dl>
 
         <p className="dialog__danger">
-          Deleting app data cannot be undone. DroidWin asks the runtime to remove the package and
+          Deleting app data cannot be undone. WINAPK asks the runtime to remove the package and
           its data together.
         </p>
 

@@ -2,7 +2,7 @@
 
 ## What was asked
 
-Load `oh-my-claudecode` (OMC) into Freebuff for multi-agent work, then finish DroidWin.
+Load `oh-my-claudecode` (OMC) into Freebuff for multi-agent work, then finish WINAPK.
 
 ## What OMC actually is (checked, not assumed)
 

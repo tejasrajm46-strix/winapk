@@ -36,7 +36,7 @@ export function Installer(props: ScreenProps) {
       <PageHead
         eyebrow="Workspace"
         title="APK Installer"
-        lede="Inspect first, install second. DroidWin never executes package code during inspection."
+        lede="Inspect first, install second. WINAPK never executes package code during inspection."
       >
         <Button variant="ghost" onClick={props.onBrowse} disabled={busy}>
           <IconFolder size={14} />
@@ -184,7 +184,7 @@ export function Installer(props: ScreenProps) {
                       <span className="check__title">Install anyway (Android testing flag)</span>
                       <span className="check__body">
                         This package targets Android API {inspection.target_sdk}. Current Android
-                        refuses packages below API 23, so DroidWin has to pass adb&apos;s
+                        refuses packages below API 23, so WINAPK has to pass adb&apos;s
                         low-target-SDK testing flag. Apps this old can also render a black window on
                         a separate display.
                       </span>
@@ -245,9 +245,9 @@ export function Installer(props: ScreenProps) {
           <Panel title="What happens on install">
             <ul className="stack stack--sm muted" style={{ paddingLeft: 18, margin: 0 }}>
               <li>The package is read from disk and its manifest parsed.</li>
-              <li>DroidWin starts the runtime if it is stopped.</li>
+              <li>WINAPK starts the runtime if it is stopped.</li>
               <li>Android installs the package and enforces signature rules.</li>
-              <li>DroidWin asks the runtime to confirm the package is present.</li>
+              <li>WINAPK asks the runtime to confirm the package is present.</li>
               <li>Opening the app creates a virtual display and a window for it.</li>
             </ul>
             {!inspection && (

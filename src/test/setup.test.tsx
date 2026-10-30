@@ -104,7 +104,7 @@ describe("Android runtime setup", () => {
         {...base}
         report={report({
           state: "starting",
-          message: "Android is installed. Starting the emulator; DroidWin calls the runtime ready only after adb sees Android finish booting.",
+          message: "Android is installed. Starting the emulator; WINAPK calls the runtime ready only after adb sees Android finish booting.",
         })}
       />,
     );
@@ -134,7 +134,7 @@ describe("Android runtime setup", () => {
   it("offers a way out for someone who only wants to look at the app", () => {
     const onSkip = vi.fn();
     render(<Setup {...base} report={report()} onSkip={onSkip} />);
-    fireEvent.click(screen.getByRole("button", { name: "Open DroidWin anyway" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open WINAPK anyway" }));
     expect(onSkip).toHaveBeenCalled();
   });
 });

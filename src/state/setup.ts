@@ -26,7 +26,7 @@ export function useSetupState({ status, onError, onRuntimeChanged }: SetupOption
   const [report, setReport] = useState<SetupReport | null>(null);
   const [progress, setProgress] = useState<SetupProgress | null>(null);
   const [busy, setBusy] = useState(false);
-  // "Open DroidWin anyway": a person who wants to look at the app before
+  // "Open WINAPK anyway": a person who wants to look at the app before
   // installing anything is not trapped on the setup screen for the session.
   const [dismissed, setDismissed] = useState(false);
   const alive = useAlive();

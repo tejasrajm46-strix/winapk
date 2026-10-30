@@ -117,7 +117,7 @@ impl WindowRequest {
             "--no-audio".to_string(),
             // scrcpy's default autosync copies the *device* clipboard to the
             // computer's whenever the guest changes it — a one-way path from an
-            // untrusted app into the user's Windows clipboard. DroidWin reports
+            // untrusted app into the user's Windows clipboard. WINAPK reports
             // clipboard support as unverified, so it does not open that path.
             "--no-clipboard-autosync".to_string(),
             format!("--keyboard={}", self.keyboard.as_arg()),
@@ -147,7 +147,7 @@ pub fn spawn(exe: &Path, req: &WindowRequest) -> DwResult<Child> {
     cmd.spawn().map_err(|e| {
         DwError::io(
             ErrorCode::LaunchFailed,
-            format!("DroidWin could not open a window for {}.", req.package_id),
+            format!("WINAPK could not open a window for {}.", req.package_id),
             &e,
         )
     })
@@ -216,7 +216,7 @@ mod tests {
         let request = WindowRequest {
             serial: "emulator-5554".into(),
             package_id: "org.example.app".into(),
-            title: "DroidWin — Example".into(),
+            title: "WINAPK — Example".into(),
             x: 40,
             y: 40,
             width: 420,
@@ -236,9 +236,7 @@ mod tests {
         assert!(args.contains(&"--no-clipboard-autosync".to_string()));
         assert!(args.contains(&"--keyboard=uhid".to_string()));
         // Each argument stays a single argv entry even when the title has spaces.
-        assert!(args
-            .iter()
-            .any(|a| a == "--window-title=DroidWin — Example"));
+        assert!(args.iter().any(|a| a == "--window-title=WINAPK — Example"));
     }
 
     #[test]

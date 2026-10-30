@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as backend from "./backend";
+import { DEFAULT_APP_NAME } from "./backend";
 import type {
   AgentPermission,
   AgentStatus,
@@ -49,6 +50,9 @@ export function App() {
   const [error, setError] = useState<DwError | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [appQuery, setAppQuery] = useState("");
+  // Mirrors the one stored setting the backend owns; the shell renders it and
+  // the backend sets the window title from the same value.
+  const [appName, setAppName] = useState(DEFAULT_APP_NAME);
   const [agent, setAgent] = useState<AgentStatus | null>(null);
   const [attention, setAttention] = useState<AttentionReport | null>(null);
   const [attentionBusy, setAttentionBusy] = useState(false);
@@ -185,6 +189,14 @@ export function App() {
   useEffect(() => {
     mounted.current = true;
     void refresh();
+
+    // The stored name is not part of the runtime refresh: it is a preference, and
+    // a failed read leaves the shipped default in place.
+    if (backend.isDesktop()) {
+      void backend.getAppName().then((name) => {
+        if (mounted.current) setAppName(name);
+      });
+    }
 
     const stops: Promise<() => void>[] = [
       backend.onStage((event) => {
@@ -428,6 +440,8 @@ export function App() {
       setAppQuery(value);
       if (value.trim()) setScreen("applications");
     },
+    appName,
+    onAppNameChange: setAppName,
     onNavigate: setScreen,
     onRefresh: () => void refresh(),
     onStartRuntime: () => void startRuntime(),
@@ -503,6 +517,7 @@ export function App() {
       env={runtime.env}
       apps={apps.apps}
       agent={agent}
+      appName={appName}
       searchValue={appQuery}
       onSearch={(value) => {
         setAppQuery(value);

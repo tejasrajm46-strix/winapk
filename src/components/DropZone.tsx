@@ -18,7 +18,7 @@ export function DropZone({
       <p className="dropzone__title">Drop an APK here</p>
       <p className="dropzone__hint">
         {hint ??
-          "DroidWin reads the package without executing it. You review the manifest before anything is installed."}
+          "WINAPK reads the package without executing it. You review the manifest before anything is installed."}
       </p>
       <div className="dropzone__actions">
         <Button variant="primary" onClick={onBrowse} disabled={busy}>

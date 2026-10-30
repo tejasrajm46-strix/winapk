@@ -174,7 +174,7 @@ impl ControlService {
             "get_runtime_stats" => self.runtime_stats().await,
             other => Err(DwError::new(
                 ErrorCode::InvalidRequest,
-                format!("There is no DroidWin tool called {other}."),
+                format!("There is no WINAPK tool called {other}."),
             )),
         }
     }
@@ -390,7 +390,7 @@ impl ControlService {
                 DwError::new(
                     ErrorCode::InvalidRequest,
                     format!(
-                        "DroidWin does not know which display {package_id} is on. Open it with open_app first, or pass display_id."
+                        "WINAPK does not know which display {package_id} is on. Open it with open_app first, or pass display_id."
                     ),
                 )
             })?;
@@ -1120,7 +1120,7 @@ impl ControlService {
         Ok(adb.process_running(&serial, package_id).await)
     }
 
-    /// What DroidWin can see about a package right now. This is the `observation`
+    /// What WINAPK can see about a package right now. This is the `observation`
     /// half of a workflow step: facts, not an opinion about success.
     pub async fn observe(
         &self,
@@ -1182,7 +1182,7 @@ impl ControlService {
             None => {
                 return Err(DwError::new(
                     ErrorCode::InvalidRequest,
-                    format!("DroidWin does not know which display {package_id} is on."),
+                    format!("WINAPK does not know which display {package_id} is on."),
                 )
                 .detail("Open the app first, or pass display_id."))
             }
@@ -1251,7 +1251,7 @@ impl ControlService {
             "nav.recents" => self.nav(args, "APP_SWITCH").await,
             other => Err(DwError::new(
                 ErrorCode::InvalidRequest,
-                format!("There is no DroidWin command called {other}."),
+                format!("There is no WINAPK command called {other}."),
             )
             .detail("Run `droidwin tools` for the command list.")),
         }
@@ -1315,7 +1315,7 @@ impl ControlService {
                 ErrorCode::InvalidConfig,
                 "Choose the balanced, performance or compatibility preset.",
             )
-            .detail(format!("\"{name}\" is not a preset DroidWin knows."))
+            .detail(format!("\"{name}\" is not a preset WINAPK knows."))
         })?;
         let host = hardware::host_facts();
         let plan = hardware::preset_plan(&host, preset);
@@ -1459,7 +1459,7 @@ impl ControlService {
     }
 
     /// Where a saved capture goes: the user's own Pictures/Videos folder under
-    /// DroidWin, or the data directory when Windows reports neither.
+    /// WINAPK, or the data directory when Windows reports neither.
     fn capture_directory(&self, video: bool) -> PathBuf {
         let base = if video {
             dirs::video_dir()
@@ -1671,7 +1671,7 @@ pub fn parse_key(key: &str) -> DwResult<i32> {
     }
     Err(DwError::new(
         ErrorCode::InvalidRequest,
-        format!("DroidWin does not know the key {trimmed}."),
+        format!("WINAPK does not know the key {trimmed}."),
     )
     .detail("Use a name such as BACK, HOME, ENTER, TAB, DEL, FORWARD_DEL, ESCAPE, or a single letter or digit."))
 }

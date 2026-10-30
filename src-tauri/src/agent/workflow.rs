@@ -76,7 +76,7 @@ impl Step {
     }
 }
 
-/// An expectation over what DroidWin can actually observe. There is no
+/// An expectation over what WINAPK can actually observe. There is no
 /// "screen looks right" check here: a screenshot is compared by hash, which says
 /// the picture changed, not that it changed correctly.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,7 +84,7 @@ impl Step {
 pub enum Expect {
     /// The package has a process.
     AppRunning { package_id: String },
-    /// DroidWin has a window open for the package.
+    /// WINAPK has a window open for the package.
     WindowOpen { package_id: String },
     /// The package owns a display, so input can be addressed to it.
     DisplayPresent { package_id: String },

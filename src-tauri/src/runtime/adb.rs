@@ -154,7 +154,7 @@ pub struct RemotePackage {
 }
 
 /// One Android display and the component Android says is focused on it. A
-/// DroidWin app window is a virtual display, so this is the only honest way to
+/// WINAPK app window is a virtual display, so this is the only honest way to
 /// map a package to the display its input must target.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DisplayFocus {
@@ -321,6 +321,54 @@ impl Adb {
 
     /// Map a logical display id to the SurfaceFlinger display token that
     /// `screencap -d` accepts.
+    /// The orientation an app's own activity says it is fixed to, if any.
+    ///
+    /// Android reports this on the task (`requestedOrientation=`), so it is the
+    /// app's answer to "can this open the other way round?". A window of the
+    /// other shape would be letterboxed by the display, not filled by the app.
+    pub async fn fixed_orientation(
+        &self,
+        serial: &str,
+        package_id: &str,
+    ) -> Option<crate::runtime::display::Orientation> {
+        let out = self
+            .shell(
+                serial,
+                &["dumpsys", "activity", "activities"],
+                Duration::from_secs(20),
+            )
+            .await
+            .ok()?;
+        parse_fixed_orientation(&out.stdout, package_id)
+    }
+
+    /// Android's accessibility hierarchy for one display, as XML.
+    ///
+    /// `uiautomator` writes one fixed file per invocation, so the path is
+    /// written and read in a single shell command to keep a concurrent dump
+    /// from overwriting it between the two steps.
+    pub async fn dump_hierarchy(&self, serial: &str, display_id: u32) -> DwResult<String> {
+        let remote = format!("/data/local/tmp/droidwin-controls-{display_id}.xml");
+        let line = format!(
+            "uiautomator dump --display {display_id} {remote} >/dev/null 2>&1; cat {remote} 2>/dev/null; rm -f {remote}"
+        );
+        let out = self
+            .run(&["-s", serial, "shell", &line], Duration::from_secs(25))
+            .await?;
+        if !out.stdout.contains("<hierarchy") {
+            return Err(DwError::new(
+                ErrorCode::BackendFailure,
+                "Android did not return a control hierarchy for that window.",
+            )
+            .detail(if out.combined().trim().is_empty() {
+                "uiautomator produced no output.".to_string()
+            } else {
+                out.combined().trim().to_string()
+            }));
+        }
+        Ok(out.stdout)
+    }
+
     async fn surface_token(&self, serial: &str, display_id: u32) -> DwResult<u64> {
         let display = self
             .shell(serial, &["dumpsys", "display"], Duration::from_secs(20))
@@ -817,7 +865,7 @@ impl Adb {
     }
 
     /// Packages Android still knows about, including ones whose data was kept
-    /// after an uninstall (`pm uninstall -k`). This is how DroidWin checks a
+    /// after an uninstall (`pm uninstall -k`). This is how WINAPK checks a
     /// keep-data claim instead of repeating it.
     pub async fn packages_including_uninstalled(&self, serial: &str) -> DwResult<Vec<String>> {
         let out = self
@@ -986,7 +1034,7 @@ pub fn log_lines_for(text: &str, package_id: &str, limit: usize) -> Option<Strin
         .collect();
     // The app's own lines win. Graphics warnings are a fallback only when the
     // app said nothing, because a failing driver usually explains a blank frame
-    // but DroidWin's own dumpsys/screencap chatter must never be quoted as the
+    // but WINAPK's own dumpsys/screencap chatter must never be quoted as the
     // app's evidence.
     let mut named_hits: Vec<String> = lines
         .iter()
@@ -1105,6 +1153,39 @@ pub fn quote_for_device_shell(value: &str) -> String {
 /// Read `Display: mDisplayId=N` blocks and the component each one focuses.
 /// `mCurrentFocus` is preferred; `mFocusedApp` is the fallback because a display
 /// that has not drawn yet reports `mCurrentFocus=null`.
+/// What orientation one package's task is fixed to, from `dumpsys activity`.
+///
+/// Only a fixed value counts: `UNSPECIFIED`, `USER`, `SENSOR`, `NOSENSOR` and
+/// `FULL_SENSOR` all mean the app is willing to follow the display, so rotating
+/// is legitimate for them. `LOCKED` is not one orientation, so it is left alone.
+pub fn parse_fixed_orientation(
+    text: &str,
+    package_id: &str,
+) -> Option<crate::runtime::display::Orientation> {
+    use crate::runtime::display::Orientation;
+    let needle = format!(":{package_id}");
+    let at = text.find(&needle)?;
+    let tail = &text[at..];
+    // The task block ends at the next task; the cap keeps a malformed dump from
+    // scanning to the end of a very large file.
+    let end = tail.find("\n  * Task{").unwrap_or(tail.len().min(20_000));
+    for line in tail[..end].lines() {
+        let Some(value) = line.trim().strip_prefix("requestedOrientation=") else {
+            continue;
+        };
+        return match value.trim() {
+            "SCREEN_ORIENTATION_PORTRAIT"
+            | "SCREEN_ORIENTATION_PORTRAIT_REVERSED"
+            | "SCREEN_ORIENTATION_SENSOR_PORTRAIT" => Some(Orientation::Portrait),
+            "SCREEN_ORIENTATION_LANDSCAPE"
+            | "SCREEN_ORIENTATION_LANDSCAPE_REVERSED"
+            | "SCREEN_ORIENTATION_SENSOR_LANDSCAPE" => Some(Orientation::Landscape),
+            _ => None,
+        };
+    }
+    None
+}
+
 pub fn parse_display_focus(text: &str) -> Vec<DisplayFocus> {
     fn component(value: &str) -> Option<(String, Option<String>)> {
         // `Window{9ab u0 pkg/act}` has the component as its last token, still
@@ -1605,6 +1686,30 @@ mod tests {
     fn an_unrelated_dump_yields_no_display_mapping() {
         assert!(parse_display_unique_ids("no displays").is_empty());
         assert!(parse_sf_display_tokens("no surface data").is_empty());
+    }
+
+    #[test]
+    fn a_fixed_orientation_is_read_from_the_apps_own_task() {
+        use crate::runtime::display::Orientation;
+        // Real lines from Android 16 for a portrait-locked, non-resizable game.
+        let dump = "  * Task{f55b3ed #24 type=standard A=10223:com.kiloo.subwaysurf nonResizable U=0 visible=true mode=fullscreen}\n      overrideOrientation=SCREEN_ORIENTATION_PORTRAIT\n      requestedOrientation=SCREEN_ORIENTATION_PORTRAIT\n  * Task{aaa #2 A=1000:com.google.android.apps.nexuslauncher}\n      requestedOrientation=SCREEN_ORIENTATION_UNSPECIFIED\n";
+        assert_eq!(
+            parse_fixed_orientation(dump, "com.kiloo.subwaysurf"),
+            Some(Orientation::Portrait)
+        );
+        // An ordinary launcher declares nothing, so it may be rotated.
+        assert_eq!(
+            parse_fixed_orientation(dump, "com.google.android.apps.nexuslauncher"),
+            None
+        );
+        assert_eq!(parse_fixed_orientation(dump, "com.not.running"), None);
+        // A sensor-landscape activity follows the sensor, but never portrait.
+        let landscape =
+            "A=1:com.example.game\n  requestedOrientation=SCREEN_ORIENTATION_SENSOR_LANDSCAPE\n";
+        assert_eq!(
+            parse_fixed_orientation(landscape, "com.example.game"),
+            Some(Orientation::Landscape)
+        );
     }
 
     #[test]

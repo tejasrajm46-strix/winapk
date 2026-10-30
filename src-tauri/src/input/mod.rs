@@ -177,6 +177,10 @@ pub enum UniversalAction {
     Menu,
     Screenshot,
     Rotate,
+    /// Show or hide the mapping overlay of the app in front. It is still a
+    /// universal action: it is decided before any per-app profile and it is
+    /// rebindable like the others.
+    ShowHide,
 }
 
 impl UniversalAction {
@@ -187,7 +191,9 @@ impl UniversalAction {
             UniversalAction::Home => Some("KEYCODE_HOME"),
             UniversalAction::Recents => Some("KEYCODE_APP_SWITCH"),
             UniversalAction::Menu => Some("KEYCODE_MENU"),
-            UniversalAction::Screenshot | UniversalAction::Rotate => None,
+            UniversalAction::Screenshot | UniversalAction::Rotate | UniversalAction::ShowHide => {
+                None
+            }
         }
     }
 
@@ -199,6 +205,7 @@ impl UniversalAction {
             UniversalAction::Menu => "Menu",
             UniversalAction::Screenshot => "Screenshot",
             UniversalAction::Rotate => "Rotate",
+            UniversalAction::ShowHide => "Show / hide mapping",
         }
     }
 
@@ -211,6 +218,7 @@ impl UniversalAction {
             UniversalAction::Menu => "menu",
             UniversalAction::Screenshot => "screenshot",
             UniversalAction::Rotate => "rotate",
+            UniversalAction::ShowHide => "show_hide",
         }
     }
 
@@ -222,6 +230,7 @@ impl UniversalAction {
             "menu" => Some(UniversalAction::Menu),
             "screenshot" => Some(UniversalAction::Screenshot),
             "rotate" => Some(UniversalAction::Rotate),
+            "show_hide" | "showhide" | "overlay" => Some(UniversalAction::ShowHide),
             _ => None,
         }
     }
@@ -258,15 +267,17 @@ impl Chord {
         if modifiers == 0 {
             return None;
         }
-        Some(Chord {
-            vk: vk?,
-            modifiers,
-        })
+        Some(Chord { vk: vk?, modifiers })
     }
 
     pub fn label(self) -> String {
         let mut text = String::new();
-        for (bit, name) in [(0b0001, "Ctrl"), (0b0010, "Alt"), (0b0100, "Shift"), (0b1000, "Win")] {
+        for (bit, name) in [
+            (0b0001, "Ctrl"),
+            (0b0010, "Alt"),
+            (0b0100, "Shift"),
+            (0b1000, "Win"),
+        ] {
             if self.modifiers & bit != 0 {
                 text.push_str(name);
                 text.push('+');
@@ -305,7 +316,8 @@ fn key_vk(name: &str) -> Option<u32> {
             .map(|n| 0x70 + n - 1),
         single if single.len() == 1 => {
             let ch = single.chars().next()?;
-            ch.is_ascii_alphanumeric().then(|| ch.to_ascii_uppercase() as u32)
+            ch.is_ascii_alphanumeric()
+                .then(|| ch.to_ascii_uppercase() as u32)
         }
         _ => None,
     }
@@ -337,7 +349,10 @@ fn vk_name(vk: u32) -> String {
 
 /// The shortcuts every app starts with.
 pub fn default_universal() -> Vec<(UniversalAction, Chord)> {
-    let chord = |vk| Chord { vk, modifiers: 0b0100 };
+    let chord = |vk| Chord {
+        vk,
+        modifiers: 0b0100,
+    };
     vec![
         (UniversalAction::Back, chord(0x41)),
         (UniversalAction::Home, chord(0x48)),
@@ -345,6 +360,16 @@ pub fn default_universal() -> Vec<(UniversalAction, Chord)> {
         (UniversalAction::Menu, chord(0x4D)),
         (UniversalAction::Screenshot, chord(0x50)),
         (UniversalAction::Rotate, chord(0x4F)),
+        // The overlay toggle is Ctrl+Shift+R, not a Shift chord: it is the one
+        // universal action that changes what WINAPK draws rather than what
+        // Android does, and it must not take Shift+R (Recent Apps) away.
+        (
+            UniversalAction::ShowHide,
+            Chord {
+                vk: 0x52,
+                modifiers: 0b0101,
+            },
+        ),
     ]
 }
 
@@ -357,6 +382,7 @@ fn universal_setting(action: UniversalAction) -> &'static str {
         UniversalAction::Menu => "universal.menu",
         UniversalAction::Screenshot => "universal.screenshot",
         UniversalAction::Rotate => "universal.rotate",
+        UniversalAction::ShowHide => "universal.show_hide",
     }
 }
 
@@ -383,13 +409,10 @@ pub struct InputController {
     last_foreground: Mutex<Option<String>>,
     dispatcher: mpsc::UnboundedSender<Dispatch>,
     hook_armed: AtomicBool,
-    /// Where `Ctrl+Shift+R` goes. Set by the overlay once its windows exist; a
-    /// harness without an overlay leaves it empty and the shortcut passes
-    /// through like any other unmapped key.
+    /// Where Show / hide mapping goes. Set by the overlay once its windows
+    /// exist; a harness without an overlay leaves it empty and the shortcut
+    /// passes through like any other unmapped key.
     overlay_toggle: OnceLock<std::sync::mpsc::Sender<String>>,
-    /// When the last toggle fired, so Windows' auto-repeat does not flip the
-    /// overlay dozens of times while the keys are held.
-    toggle_at: Mutex<Option<std::time::Instant>>,
     /// Where the two universal actions that are not Android keys go (screenshot
     /// and rotate). Set once from setup; empty in a bare harness.
     universal_sink: OnceLock<std::sync::mpsc::Sender<(String, UniversalAction)>>,
@@ -439,7 +462,6 @@ impl InputController {
             dispatcher: tx,
             hook_armed: AtomicBool::new(false),
             overlay_toggle: OnceLock::new(),
-            toggle_at: Mutex::new(None),
             universal_sink: OnceLock::new(),
             universal_at: Mutex::new(None),
             universal: Mutex::new(universal),
@@ -716,9 +738,6 @@ impl InputController {
         let Some(package) = self.foreground_package() else {
             return false;
         };
-        if let Some(consumed) = self.overlay_shortcut(&package, raw_vk, is_down, modifiers_down) {
-            return consumed;
-        }
         if let Some(consumed) = self.universal_shortcut(&package, raw_vk, is_down, modifiers_down) {
             return consumed;
         }
@@ -726,16 +745,13 @@ impl InputController {
     }
 
     /// Where screenshot and rotate go. Called once, from setup.
-    pub fn set_universal_sink(
-        &self,
-        sender: std::sync::mpsc::Sender<(String, UniversalAction)>,
-    ) {
+    pub fn set_universal_sink(&self, sender: std::sync::mpsc::Sender<(String, UniversalAction)>) {
         let _ = self.universal_sink.set(sender);
     }
 
-    /// Android's own controls, on fixed shortcuts that no per-app profile can
-    /// take away: Shift+A Back, Shift+H Home, Shift+R Recents, Shift+M Menu,
-    /// Shift+P Screenshot, Shift+O Rotate.
+    /// Android's own controls, on shortcuts that no per-app profile can take
+    /// away: Shift+A Back, Shift+H Home, Shift+R Recents, Shift+M Menu, Shift+P
+    /// Screenshot, Shift+O Rotate, Ctrl+Shift+R Show/hide mapping.
     ///
     /// The press is consumed, so the same chord is never also typed into the
     /// app. Releases pass, except while the chord is still held — that keeps a
@@ -753,9 +769,7 @@ impl InputController {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clone();
-        let Some(action) = action_for_chord(&bindings, vk, modifiers_down) else {
-            return None;
-        };
+        let action = action_for_chord(&bindings, vk, modifiers_down)?;
         let mask = bindings
             .iter()
             .find(|(bound, _)| *bound == action)
@@ -776,7 +790,11 @@ impl InputController {
         }
         tracing::debug!(
             "{} in {package}: universal {}",
-            Chord { vk, modifiers: mask }.label(),
+            Chord {
+                vk,
+                modifiers: mask
+            }
+            .label(),
             action.label()
         );
         match action.android_key() {
@@ -791,6 +809,14 @@ impl InputController {
                     }
                 });
             }
+            None if action == UniversalAction::ShowHide => {
+                // The overlay toggle is the same channel the shortcut used before
+                // it became rebindable; only the table that decides the chord
+                // changed.
+                if let Some(sender) = self.overlay_toggle.get() {
+                    let _ = sender.send(package.to_string());
+                }
+            }
             None => {
                 if let Some(sink) = self.universal_sink.get() {
                     let _ = sink.send((package.to_string(), action));
@@ -800,55 +826,10 @@ impl InputController {
         Some(true)
     }
 
-    /// Where `Ctrl+Shift+R` is delivered. Called once, from setup.
+    /// Where the Show / hide mapping action is delivered. Called once, from
+    /// setup; empty in a bare harness, where the shortcut then passes through.
     pub fn set_overlay_toggle(&self, sender: std::sync::mpsc::Sender<String>) {
         let _ = self.overlay_toggle.set(sender);
-    }
-
-    /// `Ctrl+Shift+R` shows and hides the mapping overlay of the app in front.
-    ///
-    /// Only that window's overlay is affected: the foreground package is passed
-    /// along, so the overlay never appears over a different game. The shortcut is
-    /// decided here, before any user mapping, so a profile cannot swallow it.
-    /// It is consumed only while one of DroidWin's windows has focus — typing
-    /// `Ctrl+Shift+R` in another application is not touched.
-    ///
-    /// `None` means "not this shortcut, decide the key normally". Holding the
-    /// keys fires once per 400 ms instead of once per repeat event. No state is
-    /// kept between presses, so a missed key-up cannot leave the shortcut stuck.
-    fn overlay_shortcut(
-        &self,
-        package: &str,
-        raw_vk: u32,
-        is_down: bool,
-        modifiers_down: u32,
-    ) -> Option<bool> {
-        // Virtual key 0x52 is `R`. Ctrl=1, Shift=4.
-        if normalize_vk(raw_vk) != 0x52 {
-            return None;
-        }
-        if is_down {
-            if modifiers_down != 0b0101 {
-                return None;
-            }
-            let now = std::time::Instant::now();
-            {
-                let mut last = self.toggle_at.lock().unwrap_or_else(|e| e.into_inner());
-                if last.is_some_and(|at| now.duration_since(at).as_millis() < 400) {
-                    return Some(true);
-                }
-                *last = Some(now);
-            }
-            if let Some(sender) = self.overlay_toggle.get() {
-                tracing::debug!("Ctrl+Shift+R in {package}: toggling the mapping overlay");
-                let _ = sender.send(package.to_string());
-                return Some(true);
-            }
-            return None;
-        }
-        // The release is swallowed only while the combination is still held; if
-        // Ctrl or Shift went up first it is an ordinary key-up and passes.
-        (modifiers_down == 0b0101).then_some(true)
     }
 
     /// Decide one key event for one package's mapping profile.
@@ -1239,7 +1220,7 @@ pub fn parse_key_spec(spec: &str) -> Result<u32, String> {
                 }
                 base = Some(
                     base_vk(part)
-                        .ok_or_else(|| format!("DroidWin does not know the key \"{part}\"."))?,
+                        .ok_or_else(|| format!("WINAPK does not know the key \"{part}\"."))?,
                 );
                 continue;
             }
@@ -1322,7 +1303,13 @@ mod tests {
         // One key per chord: two keys would be ambiguous.
         assert_eq!(Chord::parse("Shift+A+B"), None);
         // A repeated modifier is a typo, not a hazard.
-        assert_eq!(Chord::parse("Shift+Shift+A"), Some(Chord { vk: 0x41, modifiers: 4 }));
+        assert_eq!(
+            Chord::parse("Shift+Shift+A"),
+            Some(Chord {
+                vk: 0x41,
+                modifiers: 4
+            })
+        );
     }
 
     #[test]
@@ -1352,16 +1339,67 @@ mod tests {
             action_for_chord(&bindings, 0x4F, 0b0100),
             Some(UniversalAction::Rotate)
         );
+        // Show/hide is part of the same table, so it can be rebound like the
+        // rest and is decided before any per-app profile.
+        assert_eq!(
+            action_for_chord(&bindings, 0x52, 0b0101),
+            Some(UniversalAction::ShowHide)
+        );
         // A bare key, and Shift with Ctrl, belong to the app.
         assert_eq!(action_for_chord(&bindings, 0x41, 0), None);
         assert_eq!(action_for_chord(&bindings, 0x41, 0b0101), None);
         assert_eq!(action_for_chord(&bindings, 0x42, 0b0100), None);
+        assert_eq!(UniversalAction::ShowHide.android_key(), None);
+        assert_eq!(UniversalAction::ShowHide.id(), "show_hide");
+        assert_eq!(
+            UniversalAction::from_id("show_hide"),
+            Some(UniversalAction::ShowHide)
+        );
+        assert_eq!(UniversalAction::ShowHide.label(), "Show / hide mapping");
         // The four that are Android keys name the keys the bar sends.
         assert_eq!(UniversalAction::Back.android_key(), Some("KEYCODE_BACK"));
         assert_eq!(UniversalAction::Home.android_key(), Some("KEYCODE_HOME"));
-        assert_eq!(UniversalAction::Recents.android_key(), Some("KEYCODE_APP_SWITCH"));
+        assert_eq!(
+            UniversalAction::Recents.android_key(),
+            Some("KEYCODE_APP_SWITCH")
+        );
         assert_eq!(UniversalAction::Menu.android_key(), Some("KEYCODE_MENU"));
         assert_eq!(UniversalAction::Screenshot.android_key(), None);
+    }
+
+    #[test]
+    fn show_hide_is_rebindable_and_survives_a_restart() {
+        let store = Arc::new(crate::store::Store::open_in_memory().unwrap());
+        let build = || {
+            let runtime = Arc::new(EmulatorRuntime::new(
+                std::path::PathBuf::from("."),
+                Arc::new(crate::runtime::NoopEvents),
+            ));
+            InputController::new(runtime, Arc::clone(&store))
+        };
+        let controller = build();
+        let rebind = Chord::parse("Ctrl+Alt+O").unwrap();
+        controller
+            .set_universal_binding(UniversalAction::ShowHide, rebind)
+            .expect("Ctrl+Alt+O is not taken");
+        assert_eq!(
+            store.setting("universal.show_hide").as_deref(),
+            Some("Ctrl+Alt+O")
+        );
+
+        // A fresh controller reads the saved chord back, so a restart keeps it.
+        let restarted = build();
+        assert_eq!(
+            action_for_chord(&restarted.universal_bindings(), rebind.vk, rebind.modifiers),
+            Some(UniversalAction::ShowHide)
+        );
+
+        // Shift+R is Recent Apps, so binding Show/hide to it is refused with the
+        // name of what owns it instead of silently shadowing Android's control.
+        let err = controller
+            .set_universal_binding(UniversalAction::ShowHide, Chord::parse("Shift+R").unwrap())
+            .expect_err("Recents already owns Shift+R");
+        assert!(err.summary.contains("Recent Apps"), "{}", err.summary);
     }
 
     #[test]

@@ -1,4 +1,4 @@
-//! "Attention Needed": what DroidWin actually observed going wrong, separated
+//! "Attention Needed": what WINAPK actually observed going wrong, separated
 //! into confirmed failures and suspicions, each with the evidence behind it and
 //! one recovery that touches as little as possible.
 //!
@@ -17,7 +17,7 @@
 //!
 //! A *confirmed* problem is backed by a direct observation: a process that is
 //! gone, an event with an exit code, a probe's output, two screenshots whose
-//! pixels are all one colour. A *suspected* problem is something DroidWin could
+//! pixels are all one colour. A *suspected* problem is something WINAPK could
 //! not observe well enough to be sure — a capture that failed, a log that stayed
 //! silent — and it says so instead of presenting a guess as a fact.
 //!
@@ -58,7 +58,7 @@ const OPERATION_WINDOW: usize = 12;
 pub enum Confidence {
     /// Directly observed.
     Confirmed,
-    /// A clue DroidWin could not confirm.
+    /// A clue WINAPK could not confirm.
     Suspected,
 }
 
@@ -152,7 +152,7 @@ pub struct Problem {
     pub severity: Severity,
     pub confidence: Confidence,
     pub title: String,
-    /// What DroidWin measured, in one or two sentences.
+    /// What WINAPK measured, in one or two sentences.
     pub observed: String,
     /// The probe output, log lines or event that backs the observation.
     pub evidence: Vec<Evidence>,
@@ -266,7 +266,7 @@ impl Diagnoser {
             status.detail
         ));
         // One read of the app list this process already holds: it answers both
-        // "does DroidWin know any apps" and "is the package from an old failure
+        // "does WINAPK know any apps" and "is the package from an old failure
         // still installed", without touching the device again.
         let apps = self.store.cached_apps();
         let apps_known = !apps.is_empty();
@@ -513,7 +513,7 @@ impl Diagnoser {
             Evidence::new(
                 "state",
                 format!(
-                    "DroidWin owns this window: process {}, geometry {:?}.",
+                    "WINAPK owns this window: process {}, geometry {:?}.",
                     window.pid,
                     window
                         .geometry
@@ -546,10 +546,10 @@ impl Diagnoser {
                 severity: Severity::Blocking,
                 confidence: Confidence::Confirmed,
                 title: format!("{package} has a window but no Android display"),
-                observed: "Its window is open, but DroidWin never resolved the display it is drawn on, so screenshots and input cannot be sent to it.".to_string(),
+                observed: "Its window is open, but WINAPK never resolved the display it is drawn on, so screenshots and input cannot be sent to it.".to_string(),
                 evidence,
                 recommendation: format!(
-                    "Reopen this app's window. DroidWin recreates the display for {package}; other windows are left alone."
+                    "Reopen this app's window. WINAPK recreates the display for {package}; other windows are left alone."
                 ),
                 recovery: Recovery::ReopenWindow {
                     package_id: package.clone(),
@@ -576,7 +576,7 @@ impl Diagnoser {
                 ),
                 evidence,
                 recommendation: format!(
-                    "Retry the launch. DroidWin opens {package} again in a new window without restarting the runtime."
+                    "Retry the launch. WINAPK opens {package} again in a new window without restarting the runtime."
                 ),
                 recovery: Recovery::RetryLaunch {
                     package_id: package.clone(),
@@ -610,7 +610,7 @@ impl Diagnoser {
         let (width, height, uniform) = frame_facts(&first).ok_or_else(|| {
             DwError::new(
                 ErrorCode::BackendFailure,
-                "Android returned a screenshot DroidWin could not read.",
+                "Android returned a screenshot WINAPK could not read.",
             )
             .detail(format!(
                 "The first capture was {} bytes and did not decode as an 8-bit RGB image.",
@@ -719,14 +719,14 @@ pub fn environment_problems(env: &EnvReport) -> Vec<Problem> {
         package_id: None,
         severity: Severity::Blocking,
         confidence: Confidence::Confirmed,
-        title: "The Android runtime is missing pieces DroidWin needs".to_string(),
+        title: "The Android runtime is missing pieces WINAPK needs".to_string(),
         observed: format!(
             "The environment probe found {} missing piece(s): {}",
             env.blocking.len(),
             env.blocking.join(" ")
         ),
         evidence,
-        recommendation: "Install the missing SDK package(s) with the Android SDK manager, then choose Re-check. DroidWin uses an SDK you install yourself and does not download or redistribute it.".to_string(),
+        recommendation: "Install the missing SDK package(s) with the Android SDK manager, then choose Re-check. WINAPK uses an SDK you install yourself and does not download or redistribute it.".to_string(),
         recovery: Recovery::Recheck,
         alternatives: Vec::new(),
     }]
@@ -832,7 +832,7 @@ pub fn crash_problem(
     } else if process_alive.is_none() {
         evidence.push(Evidence::new(
             "probe",
-            "DroidWin could not probe the package's process, so whether the app itself survived is unknown.".to_string(),
+            "WINAPK could not probe the package's process, so whether the app itself survived is unknown.".to_string(),
         ));
     }
     let exit = event
@@ -856,21 +856,21 @@ pub fn crash_problem(
         },
         observed: if host_only {
             format!(
-                "DroidWin's window host for {package} exited with code {exit}, but its Android process is still alive. The app was not killed; it has no window on which to be seen."
+                "WINAPK's window host for {package} exited with code {exit}, but its Android process is still alive. The app was not killed; it has no window on which to be seen."
             )
         } else if process_alive == Some(false) {
             format!(
-                "DroidWin's window host for {package} exited with code {exit}, and its process is gone."
+                "WINAPK's window host for {package} exited with code {exit}, and its process is gone."
             )
         } else {
             format!(
-                "DroidWin's window host for {package} exited with code {exit}. DroidWin could not confirm whether the app's process survived."
+                "WINAPK's window host for {package} exited with code {exit}. WINAPK could not confirm whether the app's process survived."
             )
         },
         evidence,
         recommendation: if host_only {
             format!(
-                "Reopen this app's window. DroidWin reattaches {package} on a fresh display without restarting the runtime or touching other apps."
+                "Reopen this app's window. WINAPK reattaches {package} on a fresh display without restarting the runtime or touching other apps."
             )
         } else {
             format!(
@@ -892,13 +892,13 @@ pub fn crash_problem(
     }
 }
 
-/// A launch or install that ended in failure, from DroidWin's own history.
+/// A launch or install that ended in failure, from WINAPK's own history.
 ///
 /// A record is history, not a present-tense fact: it keeps its own sentence even
 /// after the app was installed or opened again. So the package is re-checked
 /// against the app list the runtime already holds, the age is part of the title,
 /// and the observation says which part is recorded and which part is measured
-/// now. `installed` is that list, or `None` when DroidWin has not enumerated apps
+/// now. `installed` is that list, or `None` when WINAPK has not enumerated apps
 /// yet — in which case it says so instead of repeating the record as if it were
 /// true today.
 pub fn operation_problem(
@@ -913,7 +913,7 @@ pub fn operation_problem(
     let present = installed.and_then(|apps| apps.iter().find(|app| app.package_id == package));
     let (now_sentence, probe) = match installed {
         None => (
-            "DroidWin had no installed-app list to re-check this package against, so the sentence above is recorded history, not a current observation."
+            "WINAPK had no installed-app list to re-check this package against, so the sentence above is recorded history, not a current observation."
                 .to_string(),
             Evidence::new(
                 "state",
@@ -1069,7 +1069,7 @@ pub fn render_problem(
             ),
         ],
         recommendation: format!(
-            "Retry the launch first: DroidWin closes this window and opens {package} again on a fresh display. If it is blank again, reinstall it (data is kept) and read the log evidence above."
+            "Retry the launch first: WINAPK closes this window and opens {package} again on a fresh display. If it is blank again, reinstall it (data is kept) and read the log evidence above."
         ),
         recovery: Recovery::RetryLaunch {
             package_id: package.to_string(),
@@ -1103,11 +1103,11 @@ fn capture_problem(
         title: if missing_display {
             format!("Android no longer has display {display_id} for {package}")
         } else {
-            format!("DroidWin could not capture {package}'s display")
+            format!("WINAPK could not capture {package}'s display")
         },
         observed: if missing_display {
             format!(
-                "The window is still open in DroidWin, but Android's display list no longer contains display {display_id}, so input and screenshots have nowhere to go."
+                "The window is still open in WINAPK, but Android's display list no longer contains display {display_id}, so input and screenshots have nowhere to go."
             )
         } else {
             format!(
@@ -1124,7 +1124,7 @@ fn capture_problem(
             ),
         ],
         recommendation: format!(
-            "Reopen {package}'s window so DroidWin recreates its display; other windows are unaffected."
+            "Reopen {package}'s window so WINAPK recreates its display; other windows are unaffected."
         ),
         recovery: Recovery::ReopenWindow {
             package_id: package.to_string(),

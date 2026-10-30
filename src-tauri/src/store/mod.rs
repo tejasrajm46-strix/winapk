@@ -52,7 +52,7 @@ pub struct CachedApp {
     pub icon: Option<String>,
     /// Manifest target SDK, so an old package can be labelled after a restart.
     pub target_sdk: Option<u32>,
-    /// Orientation this package is drawn in. From its manifest when DroidWin
+    /// Orientation this package is drawn in. From its manifest when WINAPK
     /// installed it; recorded from Android's own display when it did not.
     pub orientation: Option<AppOrientation>,
 }

@@ -94,6 +94,26 @@ pub fn validate_density(density: u32) -> Result<u32, String> {
     Ok(density)
 }
 
+/// The size Android is really composing right now: an override when one is
+/// active, the physical panel otherwise. Separate from `read` because the phone
+/// video path needs no density and should not pay for a second adb command.
+pub async fn read_size(adb: &Adb, serial: &str) -> DwResult<Size> {
+    let size = adb
+        .run(
+            &["-s", serial, "shell", "wm", "size"],
+            Duration::from_secs(15),
+        )
+        .await?;
+    let (physical, overridden) = parse_wm_size(&size.combined());
+    overridden.or(physical).ok_or_else(|| {
+        DwError::new(
+            ErrorCode::RuntimeUnavailable,
+            "Android did not report the phone display's size.",
+        )
+        .detail(size.combined().trim().to_string())
+    })
+}
+
 pub async fn read(adb: &Adb, serial: &str) -> DwResult<DisplayInfo> {
     let size = adb
         .run(

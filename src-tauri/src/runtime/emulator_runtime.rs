@@ -2,7 +2,7 @@
 //!
 //! One headless emulator hosts every app; each launched app gets its own scrcpy
 //! window on its own virtual display. The emulator is either one already on the
-//! machine or the one DroidWin installed for itself; it never ships inside the
+//! machine or the one WINAPK installed for itself; it never ships inside the
 //! installer.
 
 use std::collections::HashMap;
@@ -58,7 +58,7 @@ struct WindowEntry {
     /// until it answers. This is the coordinate space input is measured in, which
     /// can differ from the size the display was created with (a rotation).
     composed: std::sync::atomic::AtomicU64,
-    /// Set before DroidWin kills the window host, so its non-zero exit is
+    /// Set before WINAPK kills the window host, so its non-zero exit is
     /// reported as a close and not as the app crashing. Shared with the watcher,
     /// which outlives the map entry that owns it.
     closing: Arc<std::sync::atomic::AtomicBool>,
@@ -67,7 +67,7 @@ struct WindowEntry {
 /// What an exited window means.
 ///
 /// The classification is the event detector's whole basis, so it is one pure
-/// function: a window DroidWin closed is a close even though its killed host
+/// function: a window WINAPK closed is a close even though its killed host
 /// returns a failure code, and a host that died on its own with a failure code
 /// is a crash.
 /// The executables the emulator runs under: the launcher, and the VM it spawns.
@@ -94,7 +94,7 @@ pub fn classify_exit(
         return super::AppEvent::new(
             package_id,
             super::AppEventKind::Closed,
-            "its window was closed in DroidWin",
+            "its window was closed in WINAPK",
         )
         .exited(exit_code);
     }
@@ -130,7 +130,7 @@ pub struct OpenWindow {
     pub geometry: Option<DisplayGeometry>,
 }
 
-/// One app window's surface as DroidWin created it.
+/// One app window's surface as WINAPK created it.
 ///
 /// Everything that maps a point in a window to a moment on the Android screen —
 /// keyboard-to-touch mappings, MCP taps, screenshot sizing — needs exactly these
@@ -183,6 +183,58 @@ fn unpack_size(packed: u64) -> Option<(u32, u32)> {
     (packed != 0).then_some(((packed >> 32) as u32, packed as u32))
 }
 
+/// Apply the requested geometry to a window host's real frame.
+///
+/// The window is created asynchronously and scrcpy recomputes its size when the
+/// first video frame arrives — measured: a window fitted to 420x933 at 3 s was
+/// back at its own 280x622 default a second later. A game can also take longer
+/// than a fixed deadline to decode its first frame, so this waits for the
+/// window to exist at all, then holds the requested frame until the host has
+/// settled. Both waits are bounded, so a window that refuses the size costs a
+/// few checks and nothing else.
+async fn fit_window_size(pid: u32, width: u32, height: u32) {
+    const STEP: Duration = Duration::from_millis(200);
+    const WAIT_FOR_WINDOW: Duration = Duration::from_secs(30);
+    // scrcpy recomputes its frame when the first video frame arrives, which for
+    // a loading game can be several seconds after its window exists. Returning
+    // as soon as the target is seen once let it revert straight afterwards; the
+    // geometry has to be held across that first frame.
+    const HOLD_AFTER_SEEN: Duration = Duration::from_secs(10);
+    let started = Instant::now();
+    let mut seen_at = None;
+    let mut corrections = 0u32;
+    loop {
+        tokio::time::sleep(STEP).await;
+        let Some(hwnd) = crate::proc::window_for_pid(pid) else {
+            // The host shows its window after the first decoded frame. A game
+            // that is still loading has not created it yet.
+            if seen_at.is_none() && started.elapsed() >= WAIT_FOR_WINDOW {
+                tracing::info!("window {pid} never appeared, so no frame was applied");
+                return;
+            }
+            continue;
+        };
+        let seen = *seen_at.get_or_insert_with(Instant::now);
+        let current = crate::proc::client_size(hwnd);
+        if current != Some((width, height)) && crate::proc::resize_client(hwnd, width, height) {
+            corrections += 1;
+        }
+        if seen.elapsed() >= HOLD_AFTER_SEEN {
+            let current = crate::proc::client_size(hwnd);
+            match current {
+                Some(actual) if actual == (width, height) => tracing::info!(
+                    "window {pid} frame is {width}x{height} ({corrections} corrections)"
+                ),
+                Some(actual) => tracing::warn!(
+                    "window {pid} did not keep its {width}x{height} frame ({corrections} corrections, last {actual:?})"
+                ),
+                None => tracing::warn!("window {pid} has no measurable client area"),
+            }
+            return;
+        }
+    }
+}
+
 /// The status sentence for a containment state, split out so every branch —
 /// installed and observed, installed but unprobed, not installed, not attempted —
 /// can be read and tested without a device. An unanswered probe is never
@@ -205,7 +257,7 @@ pub fn isolation_note(state: Option<&HostIsolation>) -> String {
                 "Guest access to Windows loopback is NOT contained: {why}. Do not run untrusted packages without a separate Windows account or a VM."
             )
         }
-        None => "An app with Android's Internet permission can reach Windows services listening on loopback through 10.0.2.2. Measured here: the adb server on port 5037 answered the guest's smart-socket requests. DroidWin denies that at boot, but the runtime has not booted in this session, so nothing is installed yet. Do not run untrusted packages without a separate Windows account or a VM.".to_string(),
+        None => "An app with Android's Internet permission can reach Windows services listening on loopback through 10.0.2.2. Measured here: the adb server on port 5037 answered the guest's smart-socket requests. WINAPK denies that at boot, but the runtime has not booted in this session, so nothing is installed yet. Do not run untrusted packages without a separate Windows account or a VM.".to_string(),
     }
 }
 
@@ -235,17 +287,17 @@ pub struct EmulatorRuntime {
     /// sentence. The boot id is what keeps a guest reboot from leaving a stale
     /// claim behind — the rules go with the kernel that held them.
     isolation: Mutex<Option<(String, HostIsolation)>>,
-    /// A pid written by an earlier DroidWin run that started this emulator and
+    /// A pid written by an earlier WINAPK run that started this emulator and
     /// exited without stopping it. Together with `emulator_child` this is the
-    /// whole ownership answer: one of the two is set only when DroidWin started
+    /// whole ownership answer: one of the two is set only when WINAPK started
     /// the emulator, and both stay empty for one the user started.
     owned_pid: Mutex<Option<u32>>,
     /// An emulator a previous run started that is still alive, but whose pid is
     /// gone (`emulator.exe` exits once it has spawned the VM) or has been
     /// recycled. Claimed only after adb confirms the AVD on our port is
-    /// DroidWin's own, and stopped through `adb emu kill` rather than by pid.
+    /// WINAPK's own, and stopped through `adb emu kill` rather than by pid.
     owned_orphan: std::sync::atomic::AtomicBool,
-    /// Whether closing DroidWin stops an emulator DroidWin started. The user
+    /// Whether closing WINAPK stops an emulator WINAPK started. The user
     /// chooses this on the Runtime screen; the default is to clean up.
     stop_on_exit: std::sync::atomic::AtomicBool,
     /// Closing runs the stop twice — once from the manager window's close, once
@@ -279,7 +331,7 @@ impl EmulatorRuntime {
         }
     }
 
-    /// The file that makes ownership survive a crash: written when DroidWin
+    /// The file that makes ownership survive a crash: written when WINAPK
     /// starts the emulator, removed when it stops it.
     fn ownership_file(&self) -> PathBuf {
         self.data_dir.join("runtime").join("emulator.pid")
@@ -299,8 +351,8 @@ impl EmulatorRuntime {
 
     /// Claim an emulator this install started before a previous exit.
     ///
-    /// The caller has already verified through adb that the device on DroidWin's
-    /// port is DroidWin's own AVD, so this only decides *how* to stop it later: by
+    /// The caller has already verified through adb that the device on WINAPK's
+    /// port is WINAPK's own AVD, so this only decides *how* to stop it later: by
     /// pid when that pid is still an emulator process, otherwise through the
     /// emulator console. `emulator.exe` exits after spawning
     /// `qemu-system-x86_64-headless`, so a dead launcher pid is the normal case
@@ -325,15 +377,13 @@ impl EmulatorRuntime {
         });
         match alive {
             Some(pid) => {
-                tracing::info!("adopted the emulator DroidWin started earlier (pid {pid})");
+                tracing::info!("adopted the emulator WINAPK started earlier (pid {pid})");
                 if let Ok(mut slot) = self.owned_pid.lock() {
                     *slot = Some(pid);
                 }
             }
             None => {
-                tracing::info!(
-                    "adopted the emulator DroidWin started earlier (pid no longer live)"
-                );
+                tracing::info!("adopted the emulator WINAPK started earlier (pid no longer live)");
                 self.owned_orphan
                     .store(true, std::sync::atomic::Ordering::SeqCst);
             }
@@ -363,6 +413,13 @@ impl EmulatorRuntime {
 
     /// The serial every operation is scoped to. Exposed so the control layer
     /// narrates the same device the runtime is driving.
+    /// The window host this runtime uses. A caller that mirrors a display of
+    /// its own (recording an app window) must run the same binary the windows
+    /// run, not a second copy from PATH.
+    pub fn scrcpy_exe(&self) -> Option<std::path::PathBuf> {
+        sdk::scrcpy(&self.data_dir)
+    }
+
     pub fn serial(&self) -> String {
         Self::config().serial()
     }
@@ -404,7 +461,7 @@ impl EmulatorRuntime {
                 ErrorCode::RuntimeNotConfigured,
                 "The Android SDK is not configured.",
             )
-            .detail("Point DroidWin at an SDK with platform-tools before opening the phone.")
+            .detail("Point WINAPK at an SDK with platform-tools before opening the phone.")
         })?;
         let png = adb
             .screenshot_png(&self.serial(), super::display::DEVICE_DISPLAY)
@@ -463,6 +520,15 @@ impl EmulatorRuntime {
     /// This is what the overlay's Back/Home/Recents buttons send, so a nav click
     /// is the same real `input keyevent` a mapped key uses — not a synthesized
     /// UI state. The keycode is validated by the caller.
+    /// The orientation this app's own activity is fixed to, if it is fixed.
+    pub async fn fixed_orientation(
+        &self,
+        package_id: &str,
+    ) -> Option<crate::runtime::display::Orientation> {
+        let adb = self.adb()?;
+        adb.fixed_orientation(&self.serial(), package_id).await
+    }
+
     pub async fn key_on_display(&self, display_id: u32, keycode: i32) -> DwResult<()> {
         let adb = self.adb().ok_or_else(|| {
             DwError::new(
@@ -572,7 +638,7 @@ impl EmulatorRuntime {
     fn discover_env(&self) -> EnvReport {
         let mut report = EnvReport::default();
         // The same root the setup screen and the installer resolve, so the
-        // runtime cannot report a different SDK than the one DroidWin installed.
+        // runtime cannot report a different SDK than the one WINAPK installed.
         let Some(root) = sdk::active_root() else {
             report.blocking.push(
                 "No Android SDK found. Install the Android command-line tools and set ANDROID_SDK_ROOT."
@@ -636,7 +702,7 @@ impl EmulatorRuntime {
         match sdk::scrcpy(&self.data_dir) {
             Some(path) => report.scrcpy = Some(path.display().to_string()),
             None => report.blocking.push(
-                "The window host (scrcpy) is missing from this installation; reinstall DroidWin."
+                "The window host (scrcpy) is missing from this installation; reinstall WINAPK."
                     .to_string(),
             ),
         }
@@ -678,13 +744,13 @@ impl EmulatorRuntime {
     fn limitations(&self, verified_windows: bool) -> Vec<String> {
         let mut items = vec![
             "All apps share one Android user, so they are not isolated from each other.".to_string(),
-            "Each app window is a streamed virtual display: Android's back key works, but there is no host-side back button (Alt+B, Alt+H and Alt+S are the window host's own Back, Home and recents shortcuts).".to_string(),
+            "Each app window is a streamed virtual display. WINAPK draws Back, Home and Recent Apps along its bottom edge and they send Android's own keys to that window's display; the window host's Alt+B, Alt+H and Alt+S also work on the focused display.".to_string(),
             "Android's audio is played once by the emulator on the Windows output device; app windows do not forward it, and screen recordings are video-only because `screenrecord` has no audio option on this image.".to_string(),
             self.host_isolation_note(),
             "Clipboard sharing and dropping files onto an app window come from the window host and have not been verified in this build."
                 .to_string(),
             "ARM-only packages cannot run on the x86_64 system image.".to_string(),
-            "The Android SDK and emulator are never redistributed with DroidWin: they are downloaded from Google at setup, or an SDK already on the PC is used.".to_string(),
+            "The Android SDK and emulator are never redistributed with WINAPK: they are downloaded from Google at setup, or an SDK already on the PC is used.".to_string(),
         ];
         if !verified_windows {
             items.insert(
@@ -898,14 +964,14 @@ impl EmulatorRuntime {
             if avd_name != AVD_NAME {
                 return Err(DwError::new(
                     ErrorCode::RuntimeUnavailable,
-                    "A different Android virtual device is using DroidWin's managed emulator port.",
+                    "A different Android virtual device is using WINAPK's managed emulator port.",
                 )
                 .detail(format!(
-                    "Expected {AVD_NAME}, found {avd_name}; DroidWin will not install apps into or control another AVD."
+                    "Expected {AVD_NAME}, found {avd_name}; WINAPK will not install apps into or control another AVD."
                 )));
             }
             present = true;
-            // The device on our port is DroidWin's AVD and a pid file exists: it
+            // The device on our port is WINAPK's AVD and a pid file exists: it
             // was started by an earlier run of this app.
             self.adopt_ownership();
             if ready.booted {
@@ -919,10 +985,10 @@ impl EmulatorRuntime {
             if avd_name != AVD_NAME {
                 return Err(DwError::new(
                     ErrorCode::RuntimeUnavailable,
-                    "A different Android virtual device is using DroidWin's managed emulator port.",
+                    "A different Android virtual device is using WINAPK's managed emulator port.",
                 )
                 .detail(format!(
-                    "Expected {AVD_NAME}, found {avd_name}; DroidWin will not install apps into or control another AVD."
+                    "Expected {AVD_NAME}, found {avd_name}; WINAPK will not install apps into or control another AVD."
                 )));
             }
             self.adopt_ownership();
@@ -1137,7 +1203,13 @@ impl EmulatorRuntime {
         }
 
         let index = self.windows.lock().map(|w| w.len()).unwrap_or(0) as i32;
-        let title = format!("DroidWin — {}", label.unwrap_or(package_id));
+        // The window title carries the same display name the manager window
+        // does, so a rename is not half-applied.
+        let title = format!(
+            "{} — {}",
+            crate::branding::display_name(store),
+            label.unwrap_or(package_id)
+        );
         // uhid is the mode where Shift and every shifted symbol reach the app as
         // real key events; sdk is kept as a per-install switch and as the
         // automatic fallback when a runtime refuses a HID keyboard.
@@ -1234,6 +1306,18 @@ impl EmulatorRuntime {
             );
         }
         self.watch_window(package_id.to_string(), child, closing);
+        // The window host picks its own size for a new display (measured: a
+        // 420x933 request opened a 280x622 client, and a landscape request the
+        // same 25%-of-desktop box). The geometry is only true once the real
+        // frame has been set, so it is applied here — after the window exists
+        // and again after the first frame, when the host recalculates it.
+        // Rotating reopens the window through this same path, which is what
+        // makes the rotated frame the shape it claims to be.
+        tokio::spawn(fit_window_size(
+            pid,
+            geometry.window_width,
+            geometry.window_height,
+        ));
         self.events.apps_changed();
         // Two windows on two displays, both alive, is the evidence the capability
         // flag was waiting for. Record it once; the status build reads it back.
@@ -1287,7 +1371,7 @@ impl EmulatorRuntime {
                 ErrorCode::LaunchFailed,
                 format!("The window for {package_id} closed before Android started it."),
             )
-            .detail("The window host exited on its own. DroidWin did not close it, and no Android process for the package was observed while it was open. This app may not support a secondary display."));
+            .detail("The window host exited on its own. WINAPK did not close it, and no Android process for the package was observed while it was open. This app may not support a secondary display."));
         }
         if !started {
             let _ = self.close_window(package_id).await;
@@ -1355,7 +1439,7 @@ impl EmulatorRuntime {
             };
             return Err(DwError::new(ErrorCode::LaunchFailed, summary).detail(
                 crash.unwrap_or_else(|| {
-                    "Android recorded no crash block for this package, so DroidWin is not claiming a crash: the process was started and then disappeared. Check the runtime log for this package.".into()
+                    "Android recorded no crash block for this package, so WINAPK is not claiming a crash: the process was started and then disappeared. Check the runtime log for this package.".into()
                 }),
             ));
         }
@@ -1440,7 +1524,7 @@ impl EmulatorRuntime {
                 format!("{package_id} opened, but Android drew nothing on its window."),
             )
             .detail(format!(
-                "The app has a running process but no display of its own, so taps and screenshots could not be aimed at it; the empty window was closed instead of being left open. This happens when Android keeps a non-resizable or landscape-only activity on the default display rather than the secondary display DroidWin sent it to. {}",
+                "The app has a running process but no display of its own, so taps and screenshots could not be aimed at it; the empty window was closed instead of being left open. This happens when Android keeps a non-resizable or landscape-only activity on the default display rather than the secondary display WINAPK sent it to. {}",
                 crash.map(|text| format!("Android's crash log for this launch: {text}"))
                     .unwrap_or_else(|| "Android recorded no crash for it.".into())
             )));
@@ -1829,7 +1913,7 @@ impl EmulatorRuntime {
 
         // Measured, and the reason a larger plan is not offered: the emulator
         // caps the vCPU count itself instead of giving Android what was asked
-        // for. Saying it here keeps "6 vCPUs" from reading as a DroidWin limit.
+        // for. Saying it here keeps "6 vCPUs" from reading as a WINAPK limit.
         if host.logical_cpus > hardware::MAX_CORES {
             notes.push(format!(
                 "The Android Emulator applies at most {} vCPUs on this build; a larger -cores request is reduced by the emulator and logged as `Emulator does not support more than {} cores`.",
@@ -1852,16 +1936,17 @@ impl EmulatorRuntime {
         }
     }
 
-    /// Closing DroidWin. App windows always close; the emulator is stopped only
-    /// when DroidWin started it and the user has not asked to keep it.
+    /// Closing WINAPK. App windows always close; the emulator is stopped only
+    /// when WINAPK started it and the user has not asked to keep it.
     pub async fn shutdown(&self) {
         let _gate = self.shutdown_gate.lock().await;
         if self.stopped.load(std::sync::atomic::Ordering::SeqCst) {
             return;
         }
-        self.stopped.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.stopped
+            .store(true, std::sync::atomic::Ordering::SeqCst);
         if !self.stop_on_exit() && self.is_owned().await {
-            tracing::info!("keeping the emulator: the user asked DroidWin to leave it running");
+            tracing::info!("keeping the emulator: the user asked WINAPK to leave it running");
             self.close_windows().await;
             // Forget the pid, so the next launch sees an emulator it did not
             // start and does not stop it later against the user's wish.
@@ -1910,7 +1995,7 @@ impl EmulatorRuntime {
             *slot = None;
         }
         self.close_windows().await;
-        // Only an emulator DroidWin started is ours to stop — either the child
+        // Only an emulator WINAPK started is ours to stop — either the child
         // this process spawned, or one a previous run spawned and left behind.
         let owned = self.emulator_child.lock().await.take();
         let adopted = self.owned_pid.lock().ok().and_then(|mut slot| slot.take());
@@ -1919,13 +2004,13 @@ impl EmulatorRuntime {
             .swap(false, std::sync::atomic::Ordering::SeqCst);
         if owned.is_none() && adopted.is_none() && !orphan {
             tracing::info!(
-                "not stopping the runtime: DroidWin is not running an emulator it started"
+                "not stopping the runtime: WINAPK is not running an emulator it started"
             );
             return;
         }
         let mut child = owned;
         let pid = child.as_ref().and_then(|child| child.id()).or(adopted);
-        tracing::info!("stopping the emulator DroidWin started (pid {:?})", pid);
+        tracing::info!("stopping the emulator WINAPK started (pid {:?})", pid);
         let serial = Self::config().serial();
         let adb = self.adb();
         // A launcher this process still holds is the root of the whole tree, so
@@ -1948,7 +2033,7 @@ impl EmulatorRuntime {
             let _ = child.start_kill();
             let _ = child.wait().await;
         }
-        // Closing DroidWin must not leave the device listed. Bounded: a stuck
+        // Closing WINAPK must not leave the device listed. Bounded: a stuck
         // emulator is still worth exiting from, and the next launch adopts or
         // replaces it.
         if let Some(adb) = adb {
@@ -1997,7 +2082,7 @@ mod tests {
     /// A pid file left by a crashed run is the claim. The pid is often already
     /// gone (`emulator.exe` exits after spawning the VM), so the claim cannot
     /// depend on it being live; the caller only adopts after adb confirmed the
-    /// device on our port is DroidWin's own AVD.
+    /// device on our port is WINAPK's own AVD.
     #[tokio::test]
     async fn an_emulator_left_by_a_crashed_run_is_claimed_by_its_pid_file() {
         let dir = owner_dir("orphan");
@@ -2105,7 +2190,7 @@ mod tests {
         // every client the app died when the user closed the window.
         let event = classify_exit("org.example.game", true, Some(1), false);
         assert_eq!(event.kind, AppEventKind::Closed);
-        assert!(event.reason.contains("closed in DroidWin"));
+        assert!(event.reason.contains("closed in WINAPK"));
         assert_eq!(event.exit_code, Some(1));
     }
 

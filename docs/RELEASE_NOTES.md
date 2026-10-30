@@ -1,8 +1,30 @@
-# DroidWin 0.1.0 — release notes (29 October 2026)
+# WINAPK 0.1.0 — release notes (29 October 2026)
 
-DroidWin runs Android apps from APKs in their own Windows desktop windows. This
+WINAPK runs Android apps from APKs in their own Windows desktop windows. This
 release adds the piece that made it usable by someone who is not an Android
-developer: **DroidWin installs its own Android runtime on first run**.
+developer: **WINAPK installs its own Android runtime on first run**.
+
+## 30 October 2026 — branding and window size
+
+- **The application name is a setting.** *Settings → Application name* renames
+  the title bar, the top bar, the About panel and every app window opened
+  afterwards. The value is trimmed, limited to 40 characters, refused when empty
+  or multi-line, stored in the local database, and read back at startup so the
+  name is already in effect next launch. *Reset to WINAPK* returns to the
+  shipped name. There is one source for the name: the store, read by the window,
+  the shell and the app-window titles.
+- **The product is called WINAPK.** `productName` and `mainBinaryName` are
+  WINAPK, so the executable, the installer, the shortcut and the window title
+  all say WINAPK, and the CLI usage text matches the binary that prints it.
+  The bundle identifier stays `app.droidwin.desktop`, and the AVD stays
+  `DroidWin_API36`: those are internal identifiers, and renaming them would
+  orphan existing data directories and installed system images.
+- **A window that fits the machine.** The minimum window size drops from
+  1100×720 to 900×560, and below 1040 px wide the sidebar becomes a 64 px icon
+  rail with its accessible names intact. The previous floor could not be met on
+  a 1366×768 laptop at 125 % scaling (about 1093×590 logical pixels).
+- **The About panel reports the version it was built with.** It reads it from the
+  bundle instead of a literal that said "development build".
 
 ## New in this release
 
@@ -10,20 +32,20 @@ developer: **DroidWin installs its own Android runtime on first run**.
   screen instead of the shell. It lists every component it checked, what is
   already installed, and what is missing; nothing is downloaded until you press
   **Install Android runtime** and accept Google's Android SDK licence terms.
-- **Runtime installed by DroidWin.** Command-line tools (verified against the
+- **Runtime installed by WINAPK.** Command-line tools (verified against the
   SHA-1 Google publishes), a JRE only when the PC has none, platform-tools, the
   emulator, the Android 36 `google_apis;x86_64` system image, and the
-  `DroidWin_API36` virtual device — about 2.3 GB, once, into a directory DroidWin
+  `DroidWin_API36` virtual device — about 2.3 GB, once, into a directory WINAPK
   owns. Android Studio is not required, and an SDK you already have is used as it
   is and never modified.
 - **Real progress and honest states.** Percentages only where a transfer length is
   known; an indeterminate bar for the SDK manager. Cancel, retry, choose a folder,
-  use DroidWin's folder, or check again. "Ready" means adb answered for API 36, not
+  use WINAPK's folder, or check again. "Ready" means adb answered for API 36, not
   that files exist.
 - **Settings → Android runtime.** Change the SDK directory, or keep the emulator
-  running after DroidWin closes (default: stop the one DroidWin started).
+  running after WINAPK closes (default: stop the one WINAPK started).
 - **Ownership that survives a crash.** A pid file in the data directory lets a
-  relaunch recognise an emulator an earlier DroidWin run left behind and stop it
+  relaunch recognise an emulator an earlier WINAPK run left behind and stop it
   on close, while an emulator you started yourself is left alone.
 - **CI build.** `.github/workflows/windows.yml` builds the app and NSIS installer
   on `windows-latest` and uploads both; it needs no Android SDK.
@@ -39,8 +61,8 @@ developer: **DroidWin installs its own Android runtime on first run**.
 
 ## Install
 
-1. Run `DroidWin_0.1.0_x64-setup.exe` (Start Menu shortcut, uninstaller included).
-2. Launch DroidWin.
+1. Run `WINAPK_0.1.0_x64-setup.exe` (Start Menu shortcut, uninstaller included).
+2. Launch WINAPK.
 3. Press **Install Android runtime**, tick the licence checkbox, wait for
    "Android runtime is installed".
 4. Drop an APK on the window (or **Browse APK**) to install and launch it.
@@ -57,7 +79,7 @@ developer: **DroidWin installs its own Android runtime on first run**.
 | Reuse of an existing SDK | setup screen skipped, no download |
 | First-run screen against an empty SDK | shown, install disabled until consent |
 | After install | shell opens with RUNTIME READY · API 36 |
-| Close with default preference | emulator DroidWin started stops |
+| Close with default preference | emulator WINAPK started stops |
 | Close after a simulated crash | emulator adopted and stopped on close |
 | Keep-running preference | emulator survives close |
 | Live suite (`node scripts/live.mjs`) | see `docs/RUNTIME_SETUP.md` §8 |

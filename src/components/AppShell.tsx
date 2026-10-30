@@ -72,6 +72,7 @@ export function AppShell({
   env,
   apps,
   agent,
+  appName,
   searchValue,
   onSearch,
   children,
@@ -82,6 +83,8 @@ export function AppShell({
   env: EnvReport | null;
   apps: InstalledApp[] | null;
   agent: AgentStatus | null;
+  /** The user's display name: the same setting the window title uses. */
+  appName: string;
   searchValue: string;
   onSearch: (value: string) => void;
   children: ReactNode;
@@ -115,7 +118,7 @@ export function AppShell({
       <header className="topbar">
         <div className="topbar__brand">
           <Mark />
-          <span className="topbar__wordmark">DroidWin</span>
+          <span className="topbar__wordmark">{appName}</span>
         </div>
         <div className="topbar__context">
           <StatusPill tone={runtime.tone} label={runtime.label} />
@@ -162,10 +165,14 @@ export function AppShell({
                       type="button"
                       className="nav__item"
                       aria-current={screen === item.id ? "page" : undefined}
+                      // The label is hidden in the narrow rail, so the accessible
+                      // name and the tooltip have to carry it.
+                      aria-label={item.label}
+                      title={item.label}
                       onClick={() => onNavigate(item.id)}
                     >
                       {item.icon}
-                      <span>{item.label}</span>
+                      <span className="nav__item-label">{item.label}</span>
                     </button>
                   </li>
                 ))}
@@ -174,7 +181,7 @@ export function AppShell({
           ))}
         </div>
         <div className="nav__foot">
-          <span>DroidWin 0.1.0</span>
+          <span>{appName} 0.1.0</span>
           <span>{status?.backend ?? "Backend not probed"}</span>
         </div>
       </nav>

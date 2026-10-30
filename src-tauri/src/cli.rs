@@ -1,25 +1,25 @@
-//! The `droidwin` command line.
+//! The `WINAPK` command line.
 //!
 //! It is a client, not a second runtime: every command is a request to the
-//! running DroidWin window's own loopback endpoint, which dispatches it through
+//! running WINAPK window's own loopback endpoint, which dispatches it through
 //! the same `ControlService` the MCP tools and the desktop UI use. That keeps one
 //! emulator, one adb server, one window registry and one permission gate — and
 //! it means an agent does not have to load a tool schema for every small
 //! operation to change a performance plan or write a mapping.
 //!
 //! ```text
-//! droidwin status                 one compact JSON answer on stdout
-//! droidwin runtime restart
-//! droidwin apps install ./game.apk --launch
-//! droidwin perf preset performance
-//! droidwin mapping save com.example.game --key W --tap 12,80
-//! droidwin tools                  every command, without a description payload
+//! WINAPK status                 one compact JSON answer on stdout
+//! WINAPK runtime restart
+//! WINAPK apps install ./game.apk --launch
+//! WINAPK perf preset performance
+//! WINAPK mapping save com.example.game --key W --tap 12,80
+//! WINAPK tools                  every command, without a description payload
 //! ```
 //!
 //! Output is one JSON object. `ok` says whether the command succeeded; `data`
 //! carries the result. Exit status is 0 for success, 1 for a refused command, 2
 //! when the app's endpoint cannot be reached, and 64 for a usage error. The
-//! command needs DroidWin running with the agent endpoint enabled — it never
+//! command needs WINAPK running with the agent endpoint enabled — it never
 //! starts an emulator of its own.
 
 use std::collections::HashMap;
@@ -49,142 +49,142 @@ struct CommandSpec {
 const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "status",
-        usage: "droidwin status",
+        usage: "WINAPK status",
         does: "Runtime state, Android's report and every open window",
     },
     CommandSpec {
         name: "devices",
-        usage: "droidwin devices",
+        usage: "WINAPK devices",
         does: "Devices adb can see, marking the managed emulator",
     },
     CommandSpec {
         name: "runtime.start",
-        usage: "droidwin runtime start",
+        usage: "WINAPK runtime start",
         does: "Start the runtime, or reuse it when it is already healthy",
     },
     CommandSpec {
         name: "runtime.stop",
-        usage: "droidwin runtime stop",
-        does: "Stop the emulator DroidWin started and its windows",
+        usage: "WINAPK runtime stop",
+        does: "Stop the emulator WINAPK started and its windows",
     },
     CommandSpec {
         name: "runtime.restart",
-        usage: "droidwin runtime restart",
+        usage: "WINAPK runtime restart",
         does: "Stop, then start, so a saved performance plan applies",
     },
     CommandSpec {
         name: "apps.list",
-        usage: "droidwin apps list",
+        usage: "WINAPK apps list",
         does: "Installed third-party packages",
     },
     CommandSpec {
         name: "apps.info",
-        usage: "droidwin apps info <package>",
+        usage: "WINAPK apps info <package>",
         does: "One package, its window and its display",
     },
     CommandSpec {
         name: "apps.install",
-        usage: "droidwin apps install <file.apk> [--launch] [--allow-old-target]",
+        usage: "WINAPK apps install <file.apk> [--launch] [--allow-old-target]",
         does: "Validate and install an APK",
     },
     CommandSpec {
         name: "apps.open",
-        usage: "droidwin apps open <package>",
+        usage: "WINAPK apps open <package>",
         does: "Open an app in its own window and return its display",
     },
     CommandSpec {
         name: "apps.close",
-        usage: "droidwin apps close <package>",
+        usage: "WINAPK apps close <package>",
         does: "Close one app window; its process keeps running",
     },
     CommandSpec {
         name: "apps.stop",
-        usage: "droidwin apps stop <package>",
+        usage: "WINAPK apps stop <package>",
         does: "Close the window and force-stop the app",
     },
     CommandSpec {
         name: "perf.get",
-        usage: "droidwin perf",
+        usage: "WINAPK perf",
         does: "Requested plan next to the values Android confirms",
     },
     CommandSpec {
         name: "perf.preset",
-        usage: "droidwin perf preset balanced|performance|compatibility",
+        usage: "WINAPK perf preset balanced|performance|compatibility",
         does: "Save a named performance plan",
     },
     CommandSpec {
         name: "perf.set",
-        usage: "droidwin perf set [--mode auto|custom] [--cores 2|4|6|8] [--ram 2048..8192] [--gpu host|software|auto]",
+        usage: "WINAPK perf set [--mode auto|custom] [--cores 2|4|6|8] [--ram 2048..8192] [--gpu host|software|auto]",
         does: "Save a validated custom plan; the next start applies it",
     },
     CommandSpec {
         name: "mapping.get",
-        usage: "droidwin mapping get <package>",
+        usage: "WINAPK mapping get <package>",
         does: "A package's control mapping and display geometry",
     },
     CommandSpec {
         name: "mapping.save",
-        usage: "droidwin mapping save <package> --key W --tap 50,80 | --hold 50,80 | --keycode KEYCODE_SPACE",
+        usage: "WINAPK mapping save <package> --key W --tap 50,80 | --hold 50,80 | --keycode KEYCODE_SPACE",
         does: "Add or replace one mapping",
     },
     CommandSpec {
         name: "mapping.remove",
-        usage: "droidwin mapping remove <package> --key W",
+        usage: "WINAPK mapping remove <package> --key W",
         does: "Delete one mapping",
     },
     CommandSpec {
         name: "mapping.reset",
-        usage: "droidwin mapping reset <package>",
+        usage: "WINAPK mapping reset <package>",
         does: "Delete every mapping and switch mapping off",
     },
     CommandSpec {
         name: "mapping.enable",
-        usage: "droidwin mapping enable <package>",
+        usage: "WINAPK mapping enable <package>",
         does: "Arm this package's mapping",
     },
     CommandSpec {
         name: "mapping.disable",
-        usage: "droidwin mapping disable <package>",
+        usage: "WINAPK mapping disable <package>",
         does: "Disarm mapping and release held touches",
     },
     CommandSpec {
         name: "capture.screenshot",
-        usage: "droidwin capture screenshot [--out <folder>]",
+        usage: "WINAPK capture screenshot [--out <folder>]",
         does: "Save a PNG of the phone's display",
     },
     CommandSpec {
         name: "capture.record.start",
-        usage: "droidwin capture record start",
+        usage: "WINAPK capture record start",
         does: "Record Android's screen with screenrecord",
     },
     CommandSpec {
         name: "capture.record.stop",
-        usage: "droidwin capture record stop",
+        usage: "WINAPK capture record stop",
         does: "Finish the recording and save the MP4",
     },
     CommandSpec {
         name: "capture.record.status",
-        usage: "droidwin capture record status",
+        usage: "WINAPK capture record status",
         does: "Whether a recording is running",
     },
     CommandSpec {
         name: "nav.back",
-        usage: "droidwin nav back [--package <package>] [--display <id>]",
+        usage: "WINAPK nav back [--package <package>] [--display <id>]",
         does: "Android Back on the phone or one app window",
     },
     CommandSpec {
         name: "nav.home",
-        usage: "droidwin nav home [--package <package>] [--display <id>]",
+        usage: "WINAPK nav home [--package <package>] [--display <id>]",
         does: "Android Home on the phone or one app window",
     },
     CommandSpec {
         name: "nav.recents",
-        usage: "droidwin nav recents [--package <package>] [--display <id>]",
+        usage: "WINAPK nav recents [--package <package>] [--display <id>]",
         does: "Android recent apps on the phone or one app window",
     },
 ];
 
-/// `droidwin tools` is answered locally: it is discovery, not a device action,
+/// `WINAPK tools` is answered locally: it is discovery, not a device action,
 /// and it must work even when the app is not running.
 fn command_table() -> Value {
     let commands: Vec<Value> = COMMANDS
@@ -208,7 +208,7 @@ fn command_table() -> Value {
         "exit_codes": {
             "0": "the command succeeded",
             "1": "the command was refused or failed; error says why",
-            "2": "DroidWin is not running with the agent endpoint enabled",
+            "2": "WINAPK is not running with the agent endpoint enabled",
             "64": "the command line was not understood"
         }
     })
@@ -282,7 +282,7 @@ fn run(args: &[String]) -> i32 {
                     "ok": false,
                     "error": {
                         "code": "endpoint_not_running",
-                        "summary": "DroidWin is not running with the agent endpoint enabled.",
+                        "summary": "WINAPK is not running with the agent endpoint enabled.",
                         "detail": detail
                     }
                 }),
@@ -366,7 +366,7 @@ fn transport_failure(detail: String) -> Value {
         "ok": false,
         "error": {
             "code": "endpoint_unreachable",
-            "summary": "DroidWin's endpoint did not answer.",
+            "summary": "WINAPK's endpoint did not answer.",
             "detail": detail
         }
     })
@@ -452,22 +452,22 @@ fn parse(tokens: &[String], switches: &[&str]) -> Result<Parsed, String> {
 fn build(tokens: &[String]) -> Result<Built, String> {
     let first = tokens
         .first()
-        .ok_or_else(|| "Run `droidwin help` for the command list.".to_string())?
+        .ok_or_else(|| "Run `WINAPK help` for the command list.".to_string())?
         .as_str();
     match first {
         "help" | "--help" | "-h" => Ok(Built::Local(json!({
             "ok": true,
-            "usage": "droidwin <command> [arguments]",
+            "usage": "WINAPK <command> [arguments]",
             "commands": command_table()["commands"],
             "notes": [
-                "Requires DroidWin running with the agent endpoint enabled (Agent screen).",
+                "Requires WINAPK running with the agent endpoint enabled (Agent screen).",
                 "Every answer is one JSON object; --pretty indents it.",
-                "`droidwin call <tool> '<json>'` reaches every MCP tool by name."
+                "`WINAPK call <tool> '<json>'` reaches every MCP tool by name."
             ]
         }))),
         "version" | "--version" | "-V" => Ok(Built::Local(json!({
             "ok": true,
-            "name": "droidwin",
+            "name": "WINAPK",
             "version": env!("CARGO_PKG_VERSION")
         }))),
         "tools" => Ok(Built::Local(command_table())),
@@ -482,12 +482,12 @@ fn build(tokens: &[String]) -> Result<Built, String> {
                 "restart" => "runtime.restart",
                 other => {
                     return Err(format!(
-                        "`droidwin runtime {other}` is not a command. Use start, stop or restart."
+                        "`WINAPK runtime {other}` is not a command. Use start, stop or restart."
                     ))
                 }
             };
             if tokens.len() > 2 {
-                return Err("`droidwin runtime` takes no arguments.".into());
+                return Err("`WINAPK runtime` takes no arguments.".into());
             }
             Ok(call(command, json!({})))
         }
@@ -497,7 +497,7 @@ fn build(tokens: &[String]) -> Result<Built, String> {
         "capture" => build_capture(&tokens[1..]),
         "nav" => build_nav(&tokens[1..]),
         other => Err(format!(
-            "`droidwin {other}` is not a command. Run `droidwin tools` for the list."
+            "`WINAPK {other}` is not a command. Run `WINAPK tools` for the list."
         )),
     }
 }
@@ -513,7 +513,7 @@ fn call(command: &str, arguments: Value) -> Built {
 /// ignored, so a typo cannot look like a successful command.
 fn simple(tokens: &[String], command: &str, usage: &str) -> Result<Built, String> {
     if tokens.len() > 1 {
-        return Err(format!("`droidwin {usage}` takes no arguments."));
+        return Err(format!("`WINAPK {usage}` takes no arguments."));
     }
     Ok(call(command, json!({})))
 }
@@ -535,7 +535,7 @@ fn build_apps(tokens: &[String]) -> Result<Built, String> {
             let parsed = parse(&tokens[1..], &[])?;
             parsed.only(&[], &[])?;
             let package =
-                package_argument(parsed.positional.first(), "droidwin apps info <package>")?;
+                package_argument(parsed.positional.first(), "WINAPK apps info <package>")?;
             Ok(call("apps.info", json!({ "package_id": package })))
         }
         "install" => {
@@ -544,7 +544,7 @@ fn build_apps(tokens: &[String]) -> Result<Built, String> {
             let path = parsed
                 .positional
                 .first()
-                .ok_or("Usage: droidwin apps install <file.apk> [--launch]")?;
+                .ok_or("Usage: WINAPK apps install <file.apk> [--launch]")?;
             // The app resolves the path in its own process, so a relative path
             // from the caller's shell must be made absolute here.
             Ok(call(
@@ -559,7 +559,7 @@ fn build_apps(tokens: &[String]) -> Result<Built, String> {
         "open" | "close" | "stop" => {
             let parsed = parse(&tokens[1..], &[])?;
             parsed.only(&[], &[])?;
-            let usage = format!("droidwin apps {action} <package>");
+            let usage = format!("WINAPK apps {action} <package>");
             let package = package_argument(parsed.positional.first(), &usage)?;
             let command = match action {
                 "open" => "apps.open",
@@ -569,7 +569,7 @@ fn build_apps(tokens: &[String]) -> Result<Built, String> {
             Ok(call(command, json!({ "package_id": package })))
         }
         other => Err(format!(
-            "`droidwin apps {other}` is not a command. Use list, info, install, open, close or stop."
+            "`WINAPK apps {other}` is not a command. Use list, info, install, open, close or stop."
         )),
     }
 }
@@ -584,9 +584,9 @@ fn build_perf(tokens: &[String]) -> Result<Built, String> {
             let preset = parsed
                 .positional
                 .first()
-                .ok_or("Usage: droidwin perf preset balanced|performance|compatibility")?;
+                .ok_or("Usage: WINAPK perf preset balanced|performance|compatibility")?;
             if parsed.positional.len() > 1 {
-                return Err("`droidwin perf preset` takes one preset name.".into());
+                return Err("`WINAPK perf preset` takes one preset name.".into());
             }
             Ok(call("perf.preset", json!({ "preset": preset })))
         }
@@ -617,7 +617,7 @@ fn build_perf(tokens: &[String]) -> Result<Built, String> {
             }
             if arguments.is_empty() {
                 return Err(
-                    "Usage: droidwin perf set [--mode auto|custom] [--cores N] [--ram MB] [--gpu host|software|auto]"
+                    "Usage: WINAPK perf set [--mode auto|custom] [--cores N] [--ram MB] [--gpu host|software|auto]"
                         .into(),
                 );
             }
@@ -636,13 +636,13 @@ fn build_perf(tokens: &[String]) -> Result<Built, String> {
             Ok(call("perf.set", Value::Object(arguments)))
         }
         other => Err(format!(
-            "`droidwin perf {other}` is not a command. Use get, preset or set."
+            "`WINAPK perf {other}` is not a command. Use get, preset or set."
         )),
     }
 }
 
 fn build_mapping(tokens: &[String]) -> Result<Built, String> {
-    // `droidwin mapping <package>` is the common read.
+    // `WINAPK mapping <package>` is the common read.
     let action = tokens.first().map(String::as_str).unwrap_or("");
     let (action, rest) = match action {
         "get" | "save" | "remove" | "reset" | "enable" | "disable" => (action, &tokens[1..]),
@@ -656,7 +656,7 @@ fn build_mapping(tokens: &[String]) -> Result<Built, String> {
     };
     parsed.only(&flags, &[])?;
     let usage = format!(
-        "droidwin mapping {action} <package>{}",
+        "WINAPK mapping {action} <package>{}",
         match action {
             "save" => " --key <key> (--tap x,y | --hold x,y | --keycode NAME)",
             "remove" => " --key <key>",
@@ -672,7 +672,7 @@ fn build_mapping(tokens: &[String]) -> Result<Built, String> {
         "remove" => {
             let key = parsed
                 .flag("key")
-                .ok_or("Usage: droidwin mapping remove <package> --key W")?;
+                .ok_or("Usage: WINAPK mapping remove <package> --key W")?;
             let vk = crate::input::parse_key_spec(key)?;
             Ok(call(
                 "mapping.remove",
@@ -682,7 +682,7 @@ fn build_mapping(tokens: &[String]) -> Result<Built, String> {
         _ => {
             let key = parsed
                 .flag("key")
-                .ok_or("Usage: droidwin mapping save <package> --key W --tap 50,80")?;
+                .ok_or("Usage: WINAPK mapping save <package> --key W --tap 50,80")?;
             let vk = crate::input::parse_key_spec(key)?;
             let touches = ["tap", "hold"]
                 .iter()
@@ -754,9 +754,7 @@ fn build_capture(tokens: &[String]) -> Result<Built, String> {
             let parsed = parse(&tokens[1..], &[])?;
             parsed.only(&["out"], &[])?;
             if !parsed.positional.is_empty() {
-                return Err(
-                    "`droidwin capture screenshot` takes no arguments besides --out.".into(),
-                );
+                return Err("`WINAPK capture screenshot` takes no arguments besides --out.".into());
             }
             let mut arguments = serde_json::Map::new();
             if let Some(out) = parsed.flag("out") {
@@ -781,11 +779,11 @@ fn build_capture(tokens: &[String]) -> Result<Built, String> {
                 "capture record status",
             ),
             other => Err(format!(
-                "`droidwin capture record {other}` is not a command. Use start, stop or status."
+                "`WINAPK capture record {other}` is not a command. Use start, stop or status."
             )),
         },
         other => Err(format!(
-            "`droidwin capture {other}` is not a command. Use screenshot or record."
+            "`WINAPK capture {other}` is not a command. Use screenshot or record."
         )),
     }
 }
@@ -798,7 +796,7 @@ fn build_nav(tokens: &[String]) -> Result<Built, String> {
         "recents" => "nav.recents",
         other => {
             return Err(format!(
-                "`droidwin nav {other}` is not a command. Use back, home or recents."
+                "`WINAPK nav {other}` is not a command. Use back, home or recents."
             ))
         }
     };
@@ -806,7 +804,7 @@ fn build_nav(tokens: &[String]) -> Result<Built, String> {
     parsed.only(&["package", "display"], &[])?;
     if !parsed.positional.is_empty() {
         return Err(format!(
-            "`droidwin nav {action}` takes --package or --display, not a package as a bare argument."
+            "`WINAPK nav {action}` takes --package or --display, not a package as a bare argument."
         ));
     }
     let mut arguments = serde_json::Map::new();
@@ -828,7 +826,7 @@ fn build_call(tokens: &[String]) -> Result<Built, String> {
     let name = parsed
         .positional
         .first()
-        .ok_or("Usage: droidwin call <tool> ['{\"argument\": value}']")?;
+        .ok_or("Usage: WINAPK call <tool> ['{\"argument\": value}']")?;
     let raw = match parsed.flag("args") {
         Some(value) => value.to_string(),
         None => parsed
@@ -874,7 +872,7 @@ fn discover() -> Result<Endpoint, String> {
     let path = data_dir().join("agent").join("mcp.json");
     let text = std::fs::read_to_string(&path).map_err(|_| {
         format!(
-            "No endpoint file at {}. Open DroidWin and press Start endpoint on the Agent screen.",
+            "No endpoint file at {}. Open WINAPK and press Start endpoint on the Agent screen.",
             path.display()
         )
     })?;
@@ -920,7 +918,7 @@ async fn post(url: &str, token: &str, body: &Value) -> Result<Value, String> {
         .parse()
         .map_err(|_| format!("{url} has an invalid port."))?;
     if host != "127.0.0.1" && host != "localhost" {
-        return Err("DroidWin's endpoint is only reachable on loopback.".into());
+        return Err("WINAPK's endpoint is only reachable on loopback.".into());
     }
     let payload = serde_json::to_vec(body).map_err(|e| e.to_string())?;
     let request = format!(
@@ -932,7 +930,7 @@ async fn post(url: &str, token: &str, body: &Value) -> Result<Value, String> {
         let mut stream = TcpStream::connect(("127.0.0.1", port)).await.map_err(|e| {
             if e.kind() == std::io::ErrorKind::ConnectionRefused {
                 format!(
-                    "Port {port} refused the connection, so the app that wrote the endpoint file is no longer running. Start DroidWin and press Start endpoint on the Agent screen. ({e})"
+                    "Port {port} refused the connection, so the app that wrote the endpoint file is no longer running. Start WINAPK and press Start endpoint on the Agent screen. ({e})"
                 )
             } else {
                 format!("Could not reach 127.0.0.1:{port}: {e}")
@@ -962,13 +960,13 @@ async fn post(url: &str, token: &str, body: &Value) -> Result<Value, String> {
             .unwrap_or(0);
         if status == 401 {
             return Err(
-                "The token in the endpoint file was refused; restart the endpoint in DroidWin."
+                "The token in the endpoint file was refused; restart the endpoint in WINAPK."
                     .to_string(),
             );
         }
         if status == 404 {
             return Err(
-                "This DroidWin build does not serve the command route; update the app.".to_string(),
+                "This WINAPK build does not serve the command route; update the app.".to_string(),
             );
         }
         if status == 403 {

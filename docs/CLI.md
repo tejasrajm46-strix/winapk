@@ -1,7 +1,7 @@
 # The `droidwin` command line
 
-DroidWin ships one executable. Started with a subcommand, it is a command-line client for the
-running DroidWin window; started with nothing (or an `.apk` path), it is the desktop app.
+WINAPK ships one executable. Started with a subcommand, it is a command-line client for the
+running WINAPK window; started with nothing (or an `.apk` path), it is the desktop app.
 
 ```bash
 droidwin status
@@ -19,7 +19,7 @@ Every answer is one JSON object on stdout:
 ```
 
 `--pretty` indents it. `droidwin tools` prints the whole command table, locally, without contacting
-DroidWin.
+WINAPK.
 
 ## Why it is a client, not a second runtime
 
@@ -36,7 +36,7 @@ not load them into context for every conversation. Measured on this machine: the
 
 ## Requirements
 
-DroidWin must be running with the agent endpoint started (**Agent → Start endpoint**). The command
+WINAPK must be running with the agent endpoint started (**Agent → Start endpoint**). The command
 reads the URL and token the app writes to:
 
 ```
@@ -47,7 +47,7 @@ reads the URL and token the app writes to:
 If the app is not running, or the endpoint was stopped, the answer is:
 
 ```json
-{"ok":false,"error":{"code":"endpoint_not_running","summary":"DroidWin is not running with the agent endpoint enabled.","detail":"No endpoint file at … . Open DroidWin and press Start endpoint on the Agent screen."}}
+{"ok":false,"error":{"code":"endpoint_not_running","summary":"WINAPK is not running with the agent endpoint enabled.","detail":"No endpoint file at … . Open WINAPK and press Start endpoint on the Agent screen."}}
 ```
 
 with exit status 2. It never starts an emulator of its own.
@@ -61,7 +61,7 @@ with exit status 2. It never starts an emulator of its own.
 | `droidwin status` | Runtime state, Android's report, every open window and display id |
 | `droidwin devices` | Devices adb can see, marking the managed emulator |
 | `droidwin runtime start` | Start the runtime, or reuse it when it is healthy |
-| `droidwin runtime stop` | Stop the emulator DroidWin started and its windows |
+| `droidwin runtime stop` | Stop the emulator WINAPK started and its windows |
 | `droidwin runtime restart` | Stop, then start; how a saved performance plan takes effect |
 
 ### Applications
@@ -92,7 +92,7 @@ requested.
 
 **vCPUs stop at 6, because the emulator stops at 6.** Starting this AVD with `-cores 8` on a
 24-thread host produced a guest with `nproc` 6, and the emulator's own log said
-`Emulator does not support more than 6 cores. Number of cores set to 6`. DroidWin therefore offers
+`Emulator does not support more than 6 cores. Number of cores set to 6`. WINAPK therefore offers
 2, 4 or 6 and refuses a larger request with that reason, instead of saving a promise Android never
 receives. Memory is separate and is applied: `-memory 8192` produced `MemTotal: 8135980 kB`
 (~7.94 GB) inside Android.
@@ -118,8 +118,8 @@ dialog reads, and the same one the Windows keyboard hook dispatches.
 
 | Command | What it does |
 | --- | --- |
-| `droidwin capture screenshot [--out <folder>]` | Save a PNG of the phone's display; default `Pictures\DroidWin` |
-| `droidwin capture record start\|stop\|status` | Android `screenrecord`, saved to `Videos\DroidWin` |
+| `droidwin capture screenshot [--out <folder>]` | Save a PNG of the phone's display; default `Pictures\WINAPK` |
+| `droidwin capture record start\|stop\|status` | Android `screenrecord`, saved to `Videos\WINAPK` |
 | `droidwin nav back\|home\|recents [--package <package>] [--display <id>]` | Android's own navigation keys |
 
 Without `--package` or `--display`, navigation goes to the phone's display 0. With `--package`, it
@@ -141,7 +141,7 @@ searches, waits, verification, workflows, triggers and skills.
 | --- | --- |
 | 0 | the command succeeded |
 | 1 | the command was refused or failed; `error.code` says why |
-| 2 | DroidWin is not running with the endpoint enabled, or it stopped answering |
+| 2 | WINAPK is not running with the endpoint enabled, or it stopped answering |
 | 64 | the command line was not understood (usage errors go to stderr) |
 
 A refused command is still a JSON answer, so a script can read `error.code` instead of parsing
@@ -150,7 +150,7 @@ prose: `not_installed`, `permission_denied`, `automation_paused`, `invalid_confi
 
 ## What it does not do
 
-- It does not start DroidWin, the emulator or an adb server.
+- It does not start WINAPK, the emulator or an adb server.
 - It does not bypass the Agent screen's permission mode or the pause switch.
 - It does not connect physical phones. `list_devices` reports what adb sees (including a USB or
   wireless phone), but installing to and mirroring a non-managed device is not implemented.

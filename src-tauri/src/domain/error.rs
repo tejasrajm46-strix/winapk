@@ -29,6 +29,8 @@ pub enum ErrorCode {
     UninstallFailed,
     LaunchFailed,
     NotInstalled,
+    /// A capture or recording could not be produced or verified.
+    CaptureFailed,
     Timeout,
     Cancelled,
     BackendFailure,
@@ -56,6 +58,7 @@ impl ErrorCode {
             ErrorCode::UninstallFailed => "uninstall_failed",
             ErrorCode::LaunchFailed => "launch_failed",
             ErrorCode::NotInstalled => "not_installed",
+            ErrorCode::CaptureFailed => "capture_failed",
             ErrorCode::Timeout => "timeout",
             ErrorCode::Cancelled => "cancelled",
             ErrorCode::BackendFailure => "backend_failure",

@@ -22,7 +22,7 @@ use crate::domain::{RuntimeStatus, StageEvent};
 
 pub use emulator_runtime::EmulatorRuntime;
 
-/// What happened to one app window. These are DroidWin's own observations of a
+/// What happened to one app window. These are WINAPK's own observations of a
 /// window it owns: the window host started, exited, or exited badly. Nothing
 /// here is inferred from a screenshot or invented by a timer.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

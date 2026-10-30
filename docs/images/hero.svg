@@ -1,0 +1,168 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="560" viewBox="0 0 1600 560" role="img" aria-labelledby="dw-hero-title dw-hero-desc">
+  <title id="dw-hero-title">DroidWin — Android apps in their own real Windows windows</title>
+  <desc id="dw-hero-desc">A dark desktop scene: an Android game runs inside a Windows window with a screenshot/record/rotate rail, Back Home Recents bar, and click-to-place keyboard mapping. Keycaps for Shift+A, Shift+H and Ctrl+Shift+R float beside it.</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#05070a"/>
+      <stop offset="0.55" stop-color="#070c14"/>
+      <stop offset="1" stop-color="#0a1320"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.72" cy="0.32" r="0.55">
+      <stop offset="0" stop-color="#1d6fff" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#1d6fff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="game" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0" stop-color="#16283f"/>
+      <stop offset="0.55" stop-color="#0f1c2d"/>
+      <stop offset="1" stop-color="#0a121d"/>
+    </linearGradient>
+    <linearGradient id="hill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1f3b57"/>
+      <stop offset="1" stop-color="#0d1a29"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#4d9dff"/>
+      <stop offset="1" stop-color="#7fe3c0"/>
+    </linearGradient>
+    <pattern id="dots" width="26" height="26" patternUnits="userSpaceOnUse">
+      <circle cx="1.4" cy="1.4" r="1.1" fill="#243550" opacity="0.55"/>
+    </pattern>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="24" stdDeviation="26" flood-color="#000" flood-opacity="0.55"/>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="560" fill="url(#bg)"/>
+  <rect width="1600" height="560" fill="url(#dots)" opacity="0.55"/>
+  <rect width="1600" height="560" fill="url(#glow)"/>
+
+  <!-- Brand mark -->
+  <g transform="translate(96 86)">
+    <rect width="46" height="46" rx="12" fill="#0b1626" stroke="#2b4568"/>
+    <path d="M15 30V16h7.4c4.8 0 8 2.8 8 7s-3.2 7-8 7H15Z" fill="none" stroke="#7fb6ff" stroke-width="2.6" stroke-linejoin="round"/>
+    <path d="M22.4 21.2h0" stroke="#7fe3c0" stroke-width="3" stroke-linecap="round"/>
+    <path d="M15 36h16" stroke="#2b4568" stroke-width="2.4" stroke-linecap="round"/>
+  </g>
+
+  <text x="158" y="122" fill="#e8eef8" font-family="Georgia, 'Times New Roman', serif" font-size="44" letter-spacing="-0.5">DroidWin</text>
+  <text x="96" y="196" fill="#f2f6fc" font-family="Georgia, 'Times New Roman', serif" font-size="62" letter-spacing="-1.2">Android apps.</text>
+  <text x="96" y="262" fill="#f2f6fc" font-family="Georgia, 'Times New Roman', serif" font-size="62" letter-spacing="-1.2">Real windows.</text>
+  <text x="98" y="312" fill="#93a7c2" font-family="'Segoe UI', system-ui, sans-serif" font-size="19">One virtual display per app · on-window controls</text>
+  <text x="98" y="338" fill="#93a7c2" font-family="'Segoe UI', system-ui, sans-serif" font-size="19">and click-to-place keyboard mapping.</text>
+
+  <!-- Keycaps -->
+  <g font-family="'Segoe UI', system-ui, sans-serif" font-size="15" font-weight="600">
+    <g transform="translate(98 360)">
+      <rect width="104" height="40" rx="9" fill="#0d1a2b" stroke="#2c4260"/>
+      <rect x="1" y="1" width="102" height="36" rx="8" fill="#101f33"/>
+      <text x="16" y="26" fill="#cfe0f5">Shift+A</text>
+      <text x="78" y="26" fill="#6f88a8" font-size="11" font-weight="500">Back</text>
+    </g>
+    <g transform="translate(214 360)">
+      <rect width="104" height="40" rx="9" fill="#0d1a2b" stroke="#2c4260"/>
+      <rect x="1" y="1" width="102" height="36" rx="8" fill="#101f33"/>
+      <text x="16" y="26" fill="#cfe0f5">Shift+H</text>
+      <text x="78" y="26" fill="#6f88a8" font-size="11" font-weight="500">Home</text>
+    </g>
+    <g transform="translate(330 360)">
+      <rect width="150" height="40" rx="9" fill="#0d1a2b" stroke="#2c4260"/>
+      <rect x="1" y="1" width="148" height="36" rx="8" fill="#101f33"/>
+      <text x="14" y="26" fill="#cfe0f5">Ctrl+Shift+R</text>
+      <text x="108" y="26" fill="#6f88a8" font-size="11" font-weight="500">Overlay</text>
+    </g>
+  </g>
+
+  <!-- Desktop window -->
+  <g transform="translate(640 74)" filter="url(#shadow)">
+    <rect width="840" height="424" rx="14" fill="#0b1220" stroke="#2a3b56"/>
+    <!-- Title bar -->
+    <rect width="840" height="38" rx="14" fill="#101a2b"/>
+    <rect y="24" width="840" height="14" fill="#101a2b"/>
+    <text x="18" y="25" fill="#c6d4e8" font-family="'Segoe UI', system-ui, sans-serif" font-size="13">DroidWin — Hill Climb Racing</text>
+    <g transform="translate(792 13)" stroke="#5f7593" stroke-width="1.4">
+      <path d="M0 10h10"/>
+      <rect x="22" y="4" width="9" height="9" fill="none"/>
+      <path d="M44 4l9 9M53 4l-9 9"/>
+    </g>
+
+    <!-- Game area -->
+    <g transform="translate(0 38)">
+      <rect width="720" height="360" fill="url(#game)"/>
+      <!-- hills -->
+      <path d="M0 300c70-46 118-30 172-4 62 30 112-60 176-66 74-7 110 58 178 44 66-14 116-64 194-30v116H0Z" fill="url(#hill)"/>
+      <path d="M0 326c84-22 132 6 208 6 78 0 108-38 184-30 82 9 122 44 328 22v66H0Z" fill="#0a141f"/>
+      <!-- car -->
+      <g transform="translate(324 232)">
+        <path d="M0 42h18l10-18h52l14 18h22v14H0Z" fill="#e9f2ff"/>
+        <circle cx="26" cy="58" r="12" fill="#16222f" stroke="#9fb6d2" stroke-width="5"/>
+        <circle cx="90" cy="58" r="12" fill="#16222f" stroke="#9fb6d2" stroke-width="5"/>
+        <path d="M32 24l8-14h30l8 14Z" fill="#7fb6ff" opacity="0.85"/>
+      </g>
+      <!-- HUD -->
+      <g font-family="'Segoe UI', system-ui, sans-serif">
+        <rect x="20" y="18" width="146" height="30" rx="8" fill="#08111c" opacity="0.82"/>
+        <text x="34" y="38" fill="#e8eef8" font-size="14">13 427 772</text>
+        <circle cx="150" cy="33" r="5" fill="#ffd166"/>
+        <rect x="18" y="300" width="212" height="48" rx="10" fill="#08111c" opacity="0.86"/>
+        <text x="34" y="320" fill="#9fb6d2" font-size="11" letter-spacing="1.4">KEY MAPPING</text>
+        <text x="34" y="338" fill="#8ff0c8" font-size="12">W  ·  SPACE  ·  SHIFT</text>
+      </g>
+      <!-- mapping chips -->
+      <g font-family="'Segoe UI', system-ui, sans-serif" font-size="12" font-weight="600">
+        <g transform="translate(566 250)">
+          <circle r="15" fill="#0b1626" stroke="#7fe3c0" stroke-width="1.6"/>
+          <text x="-5.4" y="4.4" fill="#d8fff2">W</text>
+        </g>
+        <g transform="translate(514 292)">
+          <circle r="15" fill="#0b1626" stroke="#4d9dff" stroke-width="1.6"/>
+          <text x="-13" y="4.4" fill="#dceaff">SPC</text>
+        </g>
+      </g>
+      <!-- Right rail -->
+      <g transform="translate(720 0)">
+        <rect width="120" height="360" fill="#0b1220"/>
+        <g stroke="#7f93ad" stroke-width="1.7" fill="none" stroke-linejoin="round">
+          <g transform="translate(40 26)">
+            <rect x="0" y="4" width="26" height="18" rx="4"/>
+            <circle cx="13" cy="13" r="5"/>
+            <path d="M5 4l3-4h10l3 4"/>
+          </g>
+          <g transform="translate(40 96)">
+            <circle cx="13" cy="13" r="9"/>
+            <circle cx="13" cy="13" r="4" fill="#ff7b7b" stroke="none"/>
+          </g>
+          <g transform="translate(40 166)">
+            <path d="M25 13a12 12 0 1 0-3.4 9"/>
+            <path d="M25 3v9h-9"/>
+          </g>
+          <g transform="translate(36 236)" fill="#7f93ad" stroke="none">
+            <circle cx="4" cy="13" r="2.4"/><circle cx="14" cy="13" r="2.4"/><circle cx="24" cy="13" r="2.4"/>
+          </g>
+        </g>
+        <g font-family="'Segoe UI', system-ui, sans-serif" font-size="10.5" fill="#8298b3" text-anchor="middle">
+          <text x="60" y="66">Screenshot</text>
+          <text x="60" y="136">Record</text>
+          <text x="60" y="206">Rotate</text>
+          <text x="60" y="276">More</text>
+        </g>
+      </g>
+      <!-- Bottom nav -->
+      <g transform="translate(0 300)">
+        <rect x="196" y="18" width="328" height="42" rx="14" fill="#0a1320" stroke="#243650"/>
+        <g fill="none" stroke="#b9cde6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M254 33l-7 7 7 7"/>
+          <circle cx="360" cy="40" r="8"/>
+          <rect x="440" y="32" width="14" height="14" rx="3"/>
+        </g>
+      </g>
+    </g>
+  </g>
+
+  <!-- Accent line -->
+  <rect x="96" y="470" width="168" height="3" rx="1.5" fill="url(#accent)"/>
+  <text x="96" y="512" fill="#7e93ae" font-family="'Segoe UI', system-ui, sans-serif" font-size="15">Tauri 2 · Rust · Android Emulator · ADB · scrcpy</text>
+</svg>

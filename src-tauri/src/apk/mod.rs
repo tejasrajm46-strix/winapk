@@ -48,7 +48,7 @@ pub fn validate(path: &Path) -> DwResult<u64> {
             if split {
                 "That is a split package or App Bundle, not a single APK."
             } else {
-                "DroidWin installs .apk packages."
+                "WINAPK installs .apk packages."
             },
         )
         .detail(if split {
@@ -139,7 +139,7 @@ pub fn inspect(path: &Path, aapt2: Option<&Path>) -> DwResult<ApkInspection> {
                 "That archive contains split APKs instead of one package file.",
             )
             .detail(
-                "It has no top-level AndroidManifest.xml but does contain .apk entries, which is how XAPK/APKS bundles are built. DroidWin installs one .apk; split installation is not implemented.",
+                "It has no top-level AndroidManifest.xml but does contain .apk entries, which is how XAPK/APKS bundles are built. WINAPK installs one .apk; split installation is not implemented.",
             ));
         }
         return Err(DwError::new(
@@ -228,7 +228,7 @@ pub fn inspect(path: &Path, aapt2: Option<&Path>) -> DwResult<ApkInspection> {
         unavailable.push("App icon — not resolvable from the manifest alone.".to_string());
     }
     unavailable.push(
-        "Signature validity — DroidWin reports that a signature block exists, not that it is trusted."
+        "Signature validity — WINAPK reports that a signature block exists, not that it is trusted."
             .to_string(),
     );
 
@@ -256,7 +256,7 @@ pub fn inspect(path: &Path, aapt2: Option<&Path>) -> DwResult<ApkInspection> {
     });
     if orientation.is_none() {
         unavailable.push(
-            "Display orientation — the launchable activity does not lock one; DroidWin opens it on a portrait surface."
+            "Display orientation — the launchable activity does not lock one; WINAPK opens it on a portrait surface."
                 .to_string(),
         );
     }

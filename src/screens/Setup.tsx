@@ -67,7 +67,7 @@ export function Setup({
         </div>
 
         <p className="setup__lede">
-          DroidWin runs Android apps in their own windows. It needs the Android
+          WINAPK runs Android apps in their own windows. It needs the Android
           emulator and one system image — about 2.2 GB, downloaded once from
           Google. Android Studio is not required.
         </p>
@@ -117,7 +117,7 @@ export function Setup({
             <div className="setup__meta">
               <span>
                 Location <span className="mono">{report.sdk_root}</span>
-                {report.managed ? " (DroidWin's own)" : " (existing SDK)"}
+                {report.managed ? " (WINAPK's own)" : " (existing SDK)"}
               </span>
               {report.disk_free_mb > 0 && (
                 <span>{(report.disk_free_mb / 1024).toFixed(1)} GB free</span>
@@ -180,7 +180,7 @@ export function Setup({
               </Button>
               {report.configured && (
                 <Button variant="ghost" onClick={onUseManaged} disabled={installing || busy}>
-                  Use DroidWin's folder
+                  Use WINAPK's folder
                 </Button>
               )}
               <Button variant="ghost" onClick={onRefresh} disabled={busy || installing}>
@@ -188,7 +188,7 @@ export function Setup({
                 Check again
               </Button>
               <Button variant="ghost" onClick={onSkip}>
-                Open DroidWin anyway
+                Open WINAPK anyway
               </Button>
             </div>
 

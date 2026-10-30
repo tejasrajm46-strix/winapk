@@ -1,7 +1,7 @@
 [package]
 name = "droidwin"
 version = "0.1.0"
-description = "DroidWin — run Android apps on Windows desktop windows"
+description = "WINAPK — run Android apps on Windows desktop windows"
 edition = "2021"
 rust-version = "1.80"
 # Two binaries exist (the app and the runtime proof harness), so the app has to

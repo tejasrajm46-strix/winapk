@@ -123,9 +123,9 @@ pub enum SetupState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SetupReport {
     pub state: SetupState,
-    /// The SDK root DroidWin is using, or the one it would install into.
+    /// The SDK root WINAPK is using, or the one it would install into.
     pub sdk_root: String,
-    /// True when that root is DroidWin's own directory, not a user SDK.
+    /// True when that root is WINAPK's own directory, not a user SDK.
     pub managed: bool,
     /// True when the user chose this location instead of the default.
     pub configured: bool,

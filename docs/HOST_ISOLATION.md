@@ -26,7 +26,7 @@ Other surfaces enumerated at the same time:
 | --- | --- |
 | Files or media shared into the AVD | None. `launch_args` mounts no host folder, and Android's `/sdcard` is the AVD's own image. |
 | Clipboard | scrcpy 5.0.1 autosyncs the **device** clipboard to Windows whenever the guest changes it. That is a guest → host write path. |
-| `reveal_path` / file pull | Host-initiated only: the user picks a package and DroidWin pulls from `/sdcard`. A guest cannot call it, so it is not a guest-reachable host surface. |
+| `reveal_path` / file pull | Host-initiated only: the user picks a package and WINAPK pulls from `/sdcard`. A guest cannot call it, so it is not a guest-reachable host surface. |
 | Host command execution | No path was found. The guest could reach *services* (above), not run host commands. |
 
 ## 2. The containment
@@ -52,7 +52,7 @@ Why this shape:
 * **A real probe is the second source of truth**: the runtime asks `10.0.2.2:5037` from
   inside the guest and only calls the guest contained when the socket was *refused*. Silence
   (a timeout, a missing `nc`) is recorded as unknown, never as success.
-* Nothing in DroidWin's own control path changes: adb, scrcpy, screenshots, recording,
+* Nothing in WINAPK's own control path changes: adb, scrcpy, screenshots, recording,
   installs and input all run host-side or over the emulator's transport, never over the
   guest's network.
 
@@ -93,14 +93,14 @@ listener did print `PROBE-LOOPBACK` in the guest.
 ## 4. Also closed: the clipboard path
 
 `WindowRequest::arguments` now passes `--no-clipboard-autosync`, so a guest app that changes
-Android's clipboard can no longer overwrite the Windows clipboard. DroidWin already reports
+Android's clipboard can no longer overwrite the Windows clipboard. WINAPK already reports
 clipboard sharing as unverified; this makes the behaviour match the claim.
 
 ## 5. What remains
 
 * **The host's LAN address is still reachable.** A guest can open a socket to the machine's
   `192.168.x.x` address, where a service bound to `0.0.0.0` would answer. Blocking that needs
-  a Windows Firewall rule (administrator rights, machine-wide), which DroidWin does not
+  a Windows Firewall rule (administrator rights, machine-wide), which WINAPK does not
   install. Untrusted packages still belong in a separate Windows account or a VM.
 * **Play images refuse `adb root`.** On those, no containment is installed and the status
   says so.* **A reboot of Android discards the rules** — the kernel that held them is gone. The runtime keys

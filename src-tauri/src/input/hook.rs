@@ -1,12 +1,12 @@
 //! Windows low-level keyboard hook.
 //!
-//! DroidWin does not own the app windows: scrcpy does, and scrcpy forwards the
+//! WINAPK does not own the app windows: scrcpy does, and scrcpy forwards the
 //! keyboard itself. So mapping cannot live inside the window — the only place
 //! that sees a key *before* scrcpy does is a `WH_KEYBOARD_LL` hook, and that is
 //! what this module installs.
 //!
 //! The hook is global but inert by default: it swallows a key only when the
-//! foreground process is one of DroidWin's own app windows **and** that package
+//! foreground process is one of WINAPK's own app windows **and** that package
 //! has an enabled mapping for the key. Everything else is handed straight back to
 //! the next hook in the chain, which is how scrcpy keeps receiving normal typing.
 //!
@@ -148,7 +148,7 @@ unsafe extern "system" fn keyboard_proc(code: i32, w_param: usize, l_param: isiz
         let is_down = matches!(w_param, win::WM_KEYDOWN | win::WM_SYSKEYDOWN);
         let is_up = matches!(w_param, win::WM_KEYUP | win::WM_SYSKEYUP);
         // Synthetic events are handled like real ones: a mapper that acted on
-        // them would loop only if it also injected keys, and DroidWin never
+        // them would loop only if it also injected keys, and WINAPK never
         // does — it dispatches through adb, not through the keyboard.
         if is_down || is_up {
             if let Some(controller) = CONTROLLER.get() {

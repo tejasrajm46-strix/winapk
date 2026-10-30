@@ -12,6 +12,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::agent::{self, skills, ActionRecord, AgentStatus, Permission};
 use crate::apk;
+use crate::branding;
 use crate::capture::{Capture, RecordingState, SavedRecording, SavedShot};
 use crate::diagnose::{Diagnoser, Recovery, RecoveryOutcome, Report};
 use crate::domain::{
@@ -287,6 +288,7 @@ pub async fn runtime_stop(app: AppHandle) -> Result<(), DwError> {
     // A recorder left running would hold the display and write into a runtime
     // that is going away.
     state.capture.abort_recording(&state.runtime).await;
+    state.capture.abort_window_recording().await;
     state.runtime.stop_now().await;
     Ok(())
 }
@@ -331,7 +333,7 @@ pub async fn runtime_setup_cancel(app: AppHandle) -> Result<(), DwError> {
     Ok(())
 }
 
-/// Point DroidWin at an SDK directory, or at its own managed one when `path` is
+/// Point WINAPK at an SDK directory, or at its own managed one when `path` is
 /// null. The choice is stored and survives a restart.
 #[tauri::command]
 pub async fn runtime_setup_location(
@@ -373,6 +375,44 @@ pub fn set_runtime_stop_on_exit(app: AppHandle, enabled: bool) -> Result<bool, D
     Ok(enabled)
 }
 
+/// The name every surface shows. One stored setting is the authority, so the
+/// title bar and the UI cannot disagree.
+#[tauri::command]
+pub fn app_display_name(app: AppHandle) -> String {
+    branding::display_name(&app.state::<AppState>().store)
+}
+
+/// Change the display name. Only the branding changes: the executable, the
+/// installer's product name and the bundle identifier stay as they were built,
+/// which is what keeps shortcuts, updates and the single-instance lock working.
+#[tauri::command]
+pub fn set_app_display_name(app: AppHandle, name: String) -> Result<String, DwError> {
+    let state = app.state::<AppState>();
+    let saved = branding::set_display_name(&state.store, &name)?;
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.set_title(&saved);
+    }
+    Ok(saved)
+}
+
+/// The version this executable was built with. Read from the bundle rather than
+/// written into the UI, so the About panel cannot drift from the manifests.
+#[tauri::command]
+pub fn app_version(app: AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
+/// Return to the shipped name. An empty stored value is what the default is.
+#[tauri::command]
+pub fn reset_app_display_name(app: AppHandle) -> Result<String, DwError> {
+    let state = app.state::<AppState>();
+    let saved = branding::reset_display_name(&state.store)?;
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.set_title(&saved);
+    }
+    Ok(saved)
+}
+
 #[tauri::command]
 pub async fn phone_stream_start(
     app: AppHandle,
@@ -393,9 +433,18 @@ pub async fn phone_stream_start(
             "The Android SDK is not configured.",
         )
     })?;
+    let serial = state.runtime.serial();
+    // The mirror is a preview, not a recording master. Asking screenrecord for
+    // fewer pixels cuts both the guest's encoder and this WebView's decoder
+    // without changing what a touch means: points stay percentages of the
+    // display, not pixels of the stream.
+    let size = crate::runtime::display_override::read_size(&adb, &serial)
+        .await
+        .ok()
+        .and_then(|(width, height)| crate::runtime::phone_stream::capture_size(width, height));
     state
         .phone_stream
-        .start(adb, state.runtime.serial(), id, output)
+        .start(adb, serial, id, size, output)
         .await
 }
 
@@ -436,7 +485,7 @@ pub async fn phone_stream_stop(app: AppHandle, id: String) -> Result<(), DwError
 
 /// One still of the device's own screen: what the virtual phone is looking at.
 ///
-/// It is deliberately a still, not a stream. DroidWin's app windows are already a
+/// It is deliberately a still, not a stream. WINAPK's app windows are already a
 /// live view of their own Android displays; this is the phone's home screen, and
 /// a caller decides how often to refresh it. Nothing is cached here, so an image
 /// the UI shows is always one Android just produced.
@@ -509,7 +558,7 @@ pub async fn phone_text(app: AppHandle, text: String) -> Result<(), DwError> {
 }
 
 /// Where saved captures go: the user's own Pictures or Videos folder, in a
-/// DroidWin subfolder. A machine that does not report those folders gets the
+/// WINAPK subfolder. A machine that does not report those folders gets the
 /// data directory instead, so a save never fails for lack of a destination —
 /// and never lands in a system folder.
 #[derive(Clone, Copy)]
@@ -554,6 +603,89 @@ pub async fn recording_stop(app: AppHandle) -> Result<SavedRecording, DwError> {
 #[tauri::command]
 pub async fn recording_status(app: AppHandle) -> Result<RecordingState, DwError> {
     Ok(app.state::<AppState>().capture.recording_state().await)
+}
+
+/// What Android's accessibility tree says this app's controls are called.
+///
+/// Names only: the coordinates a virtual display reports are not in the
+/// display's own space, so the panel offers the names and the user clicks the
+/// real control to place the point.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DetectedControls {
+    pub package_id: String,
+    pub controls: Vec<String>,
+    pub note: String,
+}
+
+#[tauri::command]
+pub async fn detect_controls(
+    app: AppHandle,
+    package_id: String,
+) -> Result<DetectedControls, DwError> {
+    let state = app.state::<AppState>();
+    let display = state.runtime.display_of(&package_id).ok_or_else(|| {
+        DwError::new(
+            ErrorCode::LaunchFailed,
+            "Android has not reported a display for that window yet.",
+        )
+        .detail("Open the app, wait for its picture, then detect its controls.")
+    })?;
+    let adb = state.runtime.adb().ok_or_else(|| {
+        DwError::new(
+            ErrorCode::RuntimeNotConfigured,
+            "The Android SDK is not configured.",
+        )
+    })?;
+    let xml = adb.dump_hierarchy(&state.runtime.serial(), display).await?;
+    let controls = crate::agent::ui::candidate_controls(&xml, &package_id, 24);
+    let note = if controls.is_empty() {
+        "Android exposed no named controls for this app — games that draw their own controls never do. Use Place on the game to click one.".to_string()
+    } else {
+        "Android names these controls but not in a coordinate space WINAPK can trust on a virtual display. Pick one, then click that control on the game to place its point.".to_string()
+    };
+    Ok(DetectedControls {
+        package_id,
+        controls,
+        note,
+    })
+}
+
+/// Record one app window's own Android display.
+#[tauri::command]
+pub async fn window_recording_start(
+    app: AppHandle,
+    package_id: String,
+) -> Result<RecordingState, DwError> {
+    let state = app.state::<AppState>();
+    let display = state.runtime.display_of(&package_id).ok_or_else(|| {
+        DwError::new(
+            ErrorCode::LaunchFailed,
+            "Android has not reported a display for that window yet.",
+        )
+        .detail("Wait for the window to show its picture, then record it.")
+    })?;
+    let directory = capture_directory(&state, CaptureKind::Video);
+    state
+        .capture
+        .start_window_recording(&state.runtime, &package_id, display, &directory)
+        .await
+}
+
+#[tauri::command]
+pub async fn window_recording_stop(app: AppHandle) -> Result<SavedRecording, DwError> {
+    app.state::<AppState>()
+        .capture
+        .stop_window_recording()
+        .await
+}
+
+#[tauri::command]
+pub async fn window_recording_status(app: AppHandle) -> Result<RecordingState, DwError> {
+    Ok(app
+        .state::<AppState>()
+        .capture
+        .window_recording_state()
+        .await)
 }
 
 /// The phone display's own size and density, as Android reports them.
@@ -609,7 +741,7 @@ pub async fn hardware_preset(app: AppHandle, preset: String) -> Result<HardwareR
             ErrorCode::InvalidConfig,
             "Choose the balanced, performance or compatibility preset.",
         )
-        .detail(format!("\"{preset}\" is not a preset DroidWin knows."))
+        .detail(format!("\"{preset}\" is not a preset WINAPK knows."))
     })?;
     let host = hardware::host_facts();
     let plan = hardware::preset_plan(&host, parsed);
@@ -617,7 +749,7 @@ pub async fn hardware_preset(app: AppHandle, preset: String) -> Result<HardwareR
     Ok(state.runtime.hardware_report(&state.store).await)
 }
 
-/// Show a file DroidWin saved in Explorer. Only files inside DroidWin's own
+/// Show a file WINAPK saved in Explorer. Only files inside WINAPK's own
 /// capture folders (or its data directory) can be revealed, so a stray path from
 /// a page cannot be used to open something arbitrary.
 #[tauri::command]
@@ -631,7 +763,7 @@ pub async fn reveal_path(app: AppHandle, path: String) -> Result<(), DwError> {
     if !canonical.is_file() {
         return Err(DwError::new(
             ErrorCode::InvalidPath,
-            "That path is not a file DroidWin can open.",
+            "That path is not a file WINAPK can open.",
         ));
     }
     let allowed = [
@@ -646,7 +778,7 @@ pub async fn reveal_path(app: AppHandle, path: String) -> Result<(), DwError> {
     if !inside {
         return Err(DwError::new(
             ErrorCode::PermissionDenied,
-            "DroidWin only opens the files it saved itself.",
+            "WINAPK only opens the files it saved itself.",
         )
         .detail("Choose a capture from the phone screen; other paths are left to Explorer."));
     }
@@ -677,7 +809,7 @@ fn check_touch(x: u32, y: u32) -> DwResult<()> {
             "That point is not on the phone's screen.",
         )
         .detail(format!(
-            "({x}, {y}) is beyond any display DroidWin can drive."
+            "({x}, {y}) is beyond any display WINAPK can drive."
         )))
     }
 }
@@ -898,6 +1030,30 @@ pub async fn rotate_app_window(app: AppHandle, package_id: String) -> Result<App
         })
         .unwrap_or(Orientation::Portrait);
     let next = current.flipped();
+    // An app that declares one orientation does not adapt to the other surface;
+    // Android gives it a letterboxed portrait (or landscape) window inside a
+    // frame of the wrong shape. Refusing here is why the rotated frame is the
+    // shape it claims to be, instead of a strip with bars around it.
+    if let Some(fixed) = state.runtime.fixed_orientation(&package_id).await {
+        if fixed != next {
+            let label = state
+                .store
+                .cached_app(&package_id)
+                .and_then(|cached| cached.label)
+                .unwrap_or_else(|| package_id.clone());
+            return Err(DwError::new(
+                ErrorCode::NotSupported,
+                format!(
+                    "{} only opens in {}.",
+                    label,
+                    fixed.as_str()
+                ),
+            )
+            .detail(
+                "Its Android activity declares that orientation, so a window of the other shape would letterbox it. The window was left as it is.",
+            ));
+        }
+    }
     state
         .store
         .set_setting(&Orientation::setting_key(&package_id), next.as_str())?;
@@ -1216,11 +1372,8 @@ pub async fn set_universal_binding(
 ) -> Result<Vec<serde_json::Value>, DwError> {
     let state = app.state::<AppState>();
     let action = crate::input::UniversalAction::from_id(&action).ok_or_else(|| {
-        DwError::new(
-            ErrorCode::InvalidConfig,
-            "That is not a universal control.",
-        )
-        .detail("Use back, home, recents, menu, screenshot or rotate.")
+        DwError::new(ErrorCode::InvalidConfig, "That is not a universal control.")
+            .detail("Use back, home, recents, menu, screenshot, rotate or show_hide.")
     })?;
     let parsed = crate::input::Chord::parse(&chord).ok_or_else(|| {
         DwError::new(
@@ -1275,7 +1428,7 @@ mod tests {
     #[test]
     fn finds_one_package_among_shell_arguments() {
         let args = [
-            "DroidWin.exe",
+            "WINAPK.exe",
             "--flag",
             "C:\\Users\\tejas\\Downloads\\FDroid.apk",
             "notes.txt",

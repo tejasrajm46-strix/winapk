@@ -108,7 +108,7 @@ beforeEach(() => {
   backend.phoneText.mockResolvedValue(undefined);
   backend.phoneKey.mockResolvedValue(undefined);
   backend.phoneScreenshot.mockResolvedValue({
-    path: "C:\\Users\\tejas\\Pictures\\DroidWin\\droidwin-20261028-120000-000.png",
+    path: "C:\\Users\\tejas\\Pictures\\WINAPK\\droidwin-20261028-120000-000.png",
     width: 1080,
     height: 2400,
     bytes: 204_800,
@@ -118,10 +118,10 @@ beforeEach(() => {
     active: true,
     started_at: Date.now(),
     elapsed_ms: 0,
-    directory: "C:\\Users\\tejas\\Videos\\DroidWin",
+    directory: "C:\\Users\\tejas\\Videos\\WINAPK",
   });
   backend.stopRecording.mockResolvedValue({
-    path: "C:\\Users\\tejas\\Videos\\DroidWin\\droidwin-20261028-120100-000-recording.mp4",
+    path: "C:\\Users\\tejas\\Videos\\WINAPK\\droidwin-20261028-120100-000-recording.mp4",
     bytes: 5_242_880,
     started_at: 1_700_000_000_000,
     finished_at: 1_700_000_012_000,
@@ -401,7 +401,7 @@ describe("virtual phone", () => {
     fireEvent.click(screen.getByRole("button", { name: /Open/ }));
     await waitFor(() =>
       expect(backend.revealPath).toHaveBeenCalledWith(
-        "C:\\Users\\tejas\\Pictures\\DroidWin\\droidwin-20261028-120000-000.png",
+        "C:\\Users\\tejas\\Pictures\\WINAPK\\droidwin-20261028-120000-000.png",
       ),
     );
   });
@@ -506,7 +506,7 @@ describe("virtual phone", () => {
     );
 
     expect(screen.getByText("Installing package")).toBeTruthy();
-    expect(screen.getByText(/stages DroidWin has reported/i)).toBeTruthy();
+    expect(screen.getByText(/stages WINAPK has reported/i)).toBeTruthy();
   });
 
   it("reports one failure once, however many panels saw it", () => {

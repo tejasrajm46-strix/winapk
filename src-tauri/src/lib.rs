@@ -1,7 +1,8 @@
-//! DroidWin desktop shell wiring: one window, one runtime, one store.
+//! WINAPK desktop shell wiring: one window, one runtime, one store.
 
 pub mod agent;
 pub mod apk;
+pub mod branding;
 pub mod capture;
 pub mod cli;
 pub mod commands;
@@ -101,7 +102,7 @@ pub fn run() {
             std::fs::create_dir_all(&data_dir)?;
 
             let guard = diag::init(&diag::log_dir(&data_dir));
-            tracing::info!("DroidWin starting, data dir {}", data_dir.display());
+            tracing::info!("WINAPK starting, data dir {}", data_dir.display());
 
             // The installed app carries the Apache-2.0 scrcpy build; copy it into
             // the data directory once so every later launch finds one host.
@@ -112,7 +113,7 @@ pub fn run() {
                     .map_err(|e| format!("{} {:?}", e.summary, e.detail))?,
             );
             // The SDK locator needs the data directory before anything probes
-            // it: DroidWin's own Android SDK lives there. A location the user
+            // it: WINAPK's own Android SDK lives there. A location the user
             // chose on the setup screen outranks every discovered one.
             runtime::sdk::configure(&data_dir);
             if let Some(root) = store
@@ -290,6 +291,12 @@ pub fn run() {
             if let Some(config) = app.config().app.windows.first().cloned() {
                 let (asked_width, asked_height) = (config.width, config.height);
                 let window = tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?.build()?;
+                // The stored display name owns the title bar, so a rename made in
+                // an earlier session is already in effect when the window appears.
+                {
+                    let state = app.state::<commands::AppState>();
+                    let _ = window.set_title(&crate::branding::display_name(&state.store));
+                }
                 // A window taller or wider than the desktop cannot be used: the
                 // bottom of every screen, including its buttons, ends up off the
                 // monitor. The configured size is a preference, so fit it to the
@@ -323,7 +330,7 @@ pub fn run() {
                         let _ = window.center();
                     }
                 }
-                // Closing the manager ends DroidWin. The overlay windows are
+                // Closing the manager ends WINAPK. The overlay windows are
                 // separate and would otherwise keep the process alive with no
                 // window to see, leaving the runtime it started running.
                 let handle = app.handle().clone();
@@ -399,6 +406,10 @@ pub fn run() {
             commands::runtime_setup_location,
             commands::runtime_stop_on_exit,
             commands::set_runtime_stop_on_exit,
+            commands::app_display_name,
+            commands::set_app_display_name,
+            commands::reset_app_display_name,
+            commands::app_version,
             commands::phone_screen,
             commands::phone_screenshot,
             commands::app_screenshot,
@@ -445,6 +456,10 @@ pub fn run() {
             commands::agent_remove_skill,
             commands::agent_tool_catalog,
             commands::input_state,
+            commands::detect_controls,
+            commands::window_recording_start,
+            commands::window_recording_stop,
+            commands::window_recording_status,
             commands::universal_bindings,
             commands::set_universal_binding,
             commands::save_input_mapping,
@@ -467,7 +482,7 @@ pub fn run() {
             commands::attention_recover,
         ])
         .build(tauri::generate_context!())
-        .expect("DroidWin failed to start")
+        .expect("WINAPK failed to start")
         .run(|app, event| {
             // Closing the manager must not leave app windows and an emulator
             // running behind it. Only what this process started is stopped,
@@ -489,6 +504,7 @@ pub fn run() {
                         agent.stop().await;
                         phone_stream.stop(None).await;
                         capture.abort_recording(&runtime).await;
+                        capture.abort_window_recording().await;
                         tokio::time::timeout(std::time::Duration::from_secs(8), runtime.shutdown())
                             .await
                     });

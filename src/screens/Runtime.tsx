@@ -26,7 +26,7 @@ export function RuntimeScreen(props: ScreenProps) {
       <PageHead
         eyebrow="Management"
         title="Runtime"
-        lede="What DroidWin measured on this machine. Capabilities are only marked supported after they were verified."
+        lede="What WINAPK measured on this machine. Capabilities are only marked supported after they were verified."
       >
         <Button variant="ghost" onClick={props.onRefresh} disabled={busy}>
           <IconRefresh size={14} />
@@ -89,7 +89,7 @@ export function RuntimeScreen(props: ScreenProps) {
                 <span>Setup needed</span>
               </div>
               <p className="note__body">
-                No Android SDK was found. Google's emulator is not redistributed with DroidWin; the
+                No Android SDK was found. Google's emulator is not redistributed with WINAPK; the
                 setup screen downloads it once, after you accept the SDK licence terms.
               </p>
             </div>
