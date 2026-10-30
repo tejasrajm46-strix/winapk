@@ -414,6 +414,8 @@ cargo test --manifest-path src-tauri/Cargo.toml --lib  # 271 Rust tests
 | `cargo test --lib` | **271 passed, 0 failed** |
 | `cargo fmt --check` | clean |
 | `pnpm tauri build` | EXE + NSIS installer |
+| First launch, no SDK | Opened on **Set up Android** with the shell behind it; detected platform-tools, emulator, system image and window host as missing, with per-component sizes and about 2.3 GB total. Nothing was downloaded before consent. |
+| First launch, existing SDK | Skipped setup entirely and opened the dashboard — nothing reinstalled. The runtime then started on demand and booted in 18.9 s (API 36). |
 | Installer round trip | Silent install into a temp directory, then uninstall: `WINAPK.exe`, `resources\scrcpy`, the Start Menu shortcut and the HKCU uninstall entry all appeared and were all removed. The installer runs `asInvoker` — per-user, no admin prompt. |
 | Signing | **Not signed.** `Get-AuthenticodeSignature` reports `NotSigned` for both `Setup.exe` and `WINAPK.exe`. |
 

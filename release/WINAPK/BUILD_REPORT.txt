@@ -68,6 +68,33 @@ Signing              NOT   Get-AuthenticodeSignature on Setup.exe and
                            WINAPK.exe: Status = NotSigned. A downloaded copy
                            gets the SmartScreen prompt.
 
+First-launch checks (30 October 2026, 19:00 local, shipped WINAPK.exe)
+----------------------------------------------------------------------
+Both runs used a scratch data directory (DROIDWIN_HOME) so the app's real
+installation was not touched.
+
+Empty SDK           PASS  WINAPK_ANDROID_SDK pointed at an empty folder: the
+                          window opened on "Set up Android" / NOT INSTALLED and
+                          the shell stayed behind it. Detected as missing:
+                          platform-tools 15 MB, emulator 450 MB, Android 36
+                          system image 1700 MB, window host; command-line
+                          tools listed as optional 155 MB; total "about 2.3 GB
+                          to download", with free space shown next to it.
+Existing SDK        PASS  With the SDK already at %LOCALAPPDATA%\Android\Sdk,
+                          the same build skipped setup entirely and opened the
+                          dashboard: nothing was downloaded or reinstalled.
+Window host         PASS  The packaged resources\scrcpy was provisioned into
+                          <data>\runtime\bin\scrcpy on first run, so app
+                          windows have a host without any manual step.
+Runtime reuse       PASS  The managed emulator was started on demand and booted
+                          in 18.9 s (API 36, 6 vCPU, 3937 MB, GPU host), then
+                          reported "runtime available at startup: Ready".
+Startup time        PASS  The webview was answering on the DevTools endpoint
+                          about 1 s after launch, in both runs.
+
+Not run: the 2.3 GB component download itself (the empty-SDK run stopped at
+consent, nothing was fetched), a clean Windows VM, and Windows 10.
+
 Not measured / not done this pass
 ---------------------------------
 - The installer was not installed or uninstalled on a clean machine. Its
