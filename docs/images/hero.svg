@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="560" viewBox="0 0 1600 560" role="img" aria-labelledby="dw-hero-title dw-hero-desc">
-  <title id="dw-hero-title">DroidWin — Android apps in their own real Windows windows</title>
+  <title id="dw-hero-title">WINAPK — Android apps in their own real Windows windows</title>
   <desc id="dw-hero-desc">A dark desktop scene: an Android game runs inside a Windows window with a screenshot/record/rotate rail, Back Home Recents bar, and click-to-place keyboard mapping. Keycaps for Shift+A, Shift+H and Ctrl+Shift+R float beside it.</desc>
 
   <defs>
@@ -48,7 +48,7 @@
     <path d="M15 36h16" stroke="#2b4568" stroke-width="2.4" stroke-linecap="round"/>
   </g>
 
-  <text x="158" y="122" fill="#e8eef8" font-family="Georgia, 'Times New Roman', serif" font-size="44" letter-spacing="-0.5">DroidWin</text>
+  <text x="158" y="122" fill="#e8eef8" font-family="Georgia, 'Times New Roman', serif" font-size="44" letter-spacing="-0.5">WINAPK</text>
   <text x="96" y="196" fill="#f2f6fc" font-family="Georgia, 'Times New Roman', serif" font-size="62" letter-spacing="-1.2">Android apps.</text>
   <text x="96" y="262" fill="#f2f6fc" font-family="Georgia, 'Times New Roman', serif" font-size="62" letter-spacing="-1.2">Real windows.</text>
   <text x="98" y="312" fill="#93a7c2" font-family="'Segoe UI', system-ui, sans-serif" font-size="19">One virtual display per app · on-window controls</text>
@@ -82,7 +82,7 @@
     <!-- Title bar -->
     <rect width="840" height="38" rx="14" fill="#101a2b"/>
     <rect y="24" width="840" height="14" fill="#101a2b"/>
-    <text x="18" y="25" fill="#c6d4e8" font-family="'Segoe UI', system-ui, sans-serif" font-size="13">DroidWin — Hill Climb Racing</text>
+    <text x="18" y="25" fill="#c6d4e8" font-family="'Segoe UI', system-ui, sans-serif" font-size="13">WINAPK — Hill Climb Racing</text>
     <g transform="translate(792 13)" stroke="#5f7593" stroke-width="1.4">
       <path d="M0 10h10"/>
       <rect x="22" y="4" width="9" height="9" fill="none"/>
