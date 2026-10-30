@@ -4,13 +4,13 @@
 
 # WINAPK
 
+<h3>Android. Unboxed.</h3>
+
 <p><strong>Your apps. Your windows. Your control.</strong></p>
 
-Run Android apps and games in their own real Windows windows.
-
-Not a phone-shaped rectangle inside an emulator. One window per app, on its own Android display —
-with the controls anchored to the window they belong to, and keyboard mapping that starts from the
-real control you click.
+A Windows-native Android workspace: every app runs in its own real Windows window, on its own
+Android display, with the controls anchored to that window and keyboard mapping that starts from the
+control you click.
 
 <br />
 
@@ -28,6 +28,8 @@ real control you click.
 [![License](https://img.shields.io/badge/license-MIT-6b7280?style=flat-square)](LICENSE)
 
 <sub><b>One shared Android runtime · one virtual display per app · one window per app</b></sub>
+
+<sub><a href="#why-it-exists">Why it exists</a> · <a href="#see-it-working">Screenshots</a> · <a href="#features">Features</a> · <a href="#keyboard">Keyboard</a> · <a href="#install">Install</a> · <a href="#architecture">Architecture</a> · <a href="#agent-control-mcp--cli">CLI &amp; MCP</a> · <a href="#testing">Testing</a> · <a href="#roadmap">Roadmap</a></sub>
 
 </div>
 
@@ -64,9 +66,20 @@ Android display, so it survives resize and rotation.
 </tr>
 </table>
 
+| | Traditional emulator workflow | **WINAPK** |
+| :--- | :--- | :--- |
+| **Where apps run** | One emulator window, shared by everything | Each app on its own virtual display, in its own Windows window |
+| **Controls** | Configured against a phone screen, inside emulator chrome | Anchored to the app window; mapped by clicking the real control |
+| **Navigation** | Emulator-level | Back · Home · Recents at the bottom of *that* window |
+| **Automation** | Not part of the app | MCP tools and a CLI over one local, token-protected endpoint |
+
+<sub>This describes WINAPK's intended experience — not an audit of every other emulator.</sub>
+
 ---
 
-## Screenshots
+## See it working
+
+Real captures from a running session, not mockups.
 
 <div align="center">
 
@@ -80,19 +93,6 @@ Android display, so it survives resize and rotation.
 | <img src="docs/images/window-controls.png" alt="Vertical control rail: screenshot, rotate, More" width="156" /> |
 
 </div>
-
----
-
-## What changes
-
-| | Traditional emulator workflow | **WINAPK** |
-| :--- | :--- | :--- |
-| **Where apps run** | One emulator window, shared by everything | Each app on its own virtual display, in its own Windows window |
-| **Controls** | Configured against a phone screen, inside emulator chrome | Anchored to the app window; mapped by clicking the real control |
-| **Navigation** | Emulator-level | Back · Home · Recents at the bottom of *that* window |
-| **Automation** | Not part of the app | MCP tools and a CLI over one local, token-protected endpoint |
-
-<sub>This describes WINAPK's intended experience — not an audit of every other emulator.</sub>
 
 ---
 
@@ -112,7 +112,7 @@ Android display, so it survives resize and rotation.
 </td>
 <td width="50%" valign="top">
 
-#### 🎮 Controls
+#### 🎮 Input experience
 
 - **Click-to-place mapping** — click the real control, press the key; stored as a percentage of the Android display
 - **Universal chords** — `Shift+A/H/R/M/P/O` decided before any game profile, so a game cannot swallow navigation
@@ -134,7 +134,7 @@ Android display, so it survives resize and rotation.
 </td>
 <td valign="top">
 
-#### 🤖 Automation and developer
+#### 🤖 Developer and agent
 
 - **34 MCP tools** — runtime state, packages, taps, screenshots, workflows and triggers
 - **CLI on the same runtime** — 27 commands; it never starts a second emulator
@@ -147,27 +147,75 @@ Android display, so it survives resize and rotation.
 
 ---
 
-## Quick start
+## Keyboard
 
-### Install
+### Universal — the same in every Android app
+
+| Action | Default | Action | Default |
+| :--- | :---: | :--- | :---: |
+| Back | `Shift+A` | Menu | `Shift+M` |
+| Home | `Shift+H` | Screenshot | `Shift+P` |
+| Recent Apps | `Shift+R` | Rotate | `Shift+O` |
+| Show / hide mapping | `Ctrl+Shift+R` | | |
+
+Universal chords are decided **before** any per-app profile, so a game cannot swallow Android's own
+navigation. A chord needs a modifier, so plain typing is never captured, and a chord already used by
+another action or app mapping is refused with a reason instead of being silently shadowed.
+
+### Per-app mapping
+
+Mapping belongs to one Android package, and it is **off** until you switch it on for that package.
+Nothing is intercepted until then.
+
+| | Step | What happens |
+| :---: | :--- | :--- |
+| **1** | Open the app, then **More → Key mapping** | The mapping panel opens over that window, with the key list and the display geometry |
+| **2** | **Place on the game** | The overlay waits for your next click and the panel steps out of the way |
+| **3** | Click the control you want to reach | The click lands on the app, so the real button is under the point — not a guessed coordinate |
+| **4** | Press the key you want | Modifiers are accepted, and `Escape` is captured as a mapping instead of closing the panel |
+| **5** | Choose the action | **Tap**, **Hold**, or an Android keycode — shown as `Tap 24% / 36%` or `Android SPACE` in the list |
+| **6** | **Add mapping** | The point is stored as a percentage of the Android display, so resize and rotation keep it on the same control |
+| **7** | **Mappings armed** | Mapping is saved for that package and reloaded next time you open it; **Reset mappings** clears them all |
+
+The panel also lists every mapping with its own on/off switch and a per-key remove button, so a
+profile can be trimmed without being rebuilt.
+
+---
+
+## Install
+
+### 1 · Download
+
+| File | What it is |
+| :--- | :--- |
+| [Setup.exe](release/WINAPK/Setup.exe) | NSIS installer: Start Menu shortcut, uninstaller included |
+| [WINAPK.exe](release/WINAPK/WINAPK.exe) | Portable build — no install step |
+| [BUILD_REPORT.txt](release/WINAPK/BUILD_REPORT.txt) | The checks that produced these binaries, and their SHA-256 |
+
+Both binaries are committed here, and the download button at the top points at the exact installer
+whose hash is in the build report. Tagged releases publish the same artifact under **Releases**.
+
+### 2 · Run the installer
 
 ```powershell
 .\release\WINAPK\Setup.exe
 ```
 
-First launch sets up its own Android runtime (SDK, system image, AVD) from Google's distribution, then
-reuses it. Nothing else has to be installed beforehand.
+### 3 · First launch
 
-> The download button above points at the installer committed in this repository — the exact binary
-> whose SHA-256 is in the build report. Tagged releases publish the same artifact under **Releases**.
+WINAPK has no bundled runtime. First launch offers **Install Android runtime**: it downloads the SDK,
+system image and an AVD from Google's distribution, then reuses them. Accept Google's licence terms
+and wait for *"Android runtime is installed"*.
 
-### Run the portable build
+Already have an SDK? *Settings → Android runtime → Choose SDK folder* skips the download entirely.
+
+### 4 · Portable build
 
 ```powershell
 .\release\WINAPK\WINAPK.exe
 ```
 
-### Build from source
+### 5 · From source
 
 ```powershell
 pnpm install
@@ -189,36 +237,114 @@ pnpm tauri build    # release EXE + NSIS installer
 
 ---
 
-## Keyboard
+## Architecture
 
-**Universal — the same in every Android app** (editable in *Key mapping*):
+Three layers, and exactly one owner per concern:
 
-| Action | Default | Action | Default |
-| :--- | :---: | :--- | :---: |
-| Back | `Shift+A` | Menu | `Shift+M` |
-| Home | `Shift+H` | Screenshot | `Shift+P` |
-| Recent Apps | `Shift+R` | Rotate | `Shift+O` |
-| Show / hide mapping | `Ctrl+Shift+R` | | |
+```mermaid
+flowchart TD
+  subgraph shell["Tauri desktop shell"]
+    UI["React + TypeScript UI<br/>library, app controls, overlays"]
+  end
 
-Universal chords are decided **before** any per-app profile, so a game cannot swallow Android's own
-navigation. A chord needs a modifier, so plain typing is never captured, and a chord already used by
-another action or app mapping is refused with a reason instead of being silently shadowed.
+  subgraph core["Rust core"]
+    RT["EmulatorRuntime<br/>processes, adb, virtual displays"]
+    IN["InputController<br/>profiles, chord decisions, hook"]
+    OV["Overlay<br/>window geometry, visibility"]
+    CP["Capture<br/>stills, recordings"]
+    AG["Agent<br/>MCP server + control service"]
+  end
 
-### Per-app mapping, in three steps
+  subgraph android["Android runtime"]
+    EMU["One emulator, one AVD"]
+    DISP["One virtual display per app"]
+    SC["scrcpy window host"]
+  end
 
-| | Step | What happens |
-| :---: | :--- | :--- |
-| **1** | *More → Key mapping → Place on the game* | The overlay waits for your next click on the running app |
-| **2** | Click the control, then press a key | The point is captured as a percentage of the Android display, so resize and rotation keep it on the same control |
-| **3** | **Add** | The mapping is saved for that Android package and reloaded when you open it again |
+  CLI["WINAPK CLI"]
+  MCP["MCP client"]
+
+  UI -->|invoke + events| RT
+  UI --> IN
+  UI --> AG
+  OV -->|geometry, visibility| UI
+  IN --> RT
+  AG --> RT
+  CP --> RT
+  RT --> EMU
+  RT --> DISP
+  RT --> SC
+  CLI -->|loopback + token| AG
+  MCP -->|stdio bridge| AG
+```
+
+The runtime owns processes, `InputController` owns profiles and key decisions, `Overlay` owns window
+geometry and visibility, and the React layer renders whatever the backend pushes — it never mirrors
+state.
+
+### How an app gets its window
+
+WINAPK does not open a display and then tell Android to start an activity in it. It asks **scrcpy**
+for a new virtual display and hands it the package to start, which is why the window, its surface and
+its keyboard backend are decided in one step:
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant You
+  participant UI as WINAPK UI
+  participant RT as EmulatorRuntime
+  participant ADB as adb
+  participant SC as scrcpy
+
+  You->>UI: Launch
+  UI->>RT: launch(package)
+  RT->>RT: already open? return that window instead
+  RT->>ADB: ensure the runtime is ready
+  RT->>ADB: is the package installed?
+  RT->>SC: --new-display=WxH/dpi --start-app=pkg --window-title=…
+  SC->>ADB: create the virtual display and start the activity on it
+  SC-->>You: its own Windows window
+```
+
+The title carries the app's own name, so a rename is never half-applied, and a landscape-locked game
+gets a landscape surface from its own manifest rather than being rotated and clipped.
+
+### How a key reaches Android
+
+```mermaid
+flowchart TD
+  K["Physical key"] --> H["Low-level Windows hook"]
+  H --> C{"Bound universal chord?"}
+  C -->|yes| N["Android control<br/>Back · Home · Recents · Menu · Screenshot · Rotate"]
+  C -->|no| A{"This package's mapping armed?"}
+  A -->|yes| M["Tap, hold or keycode at the stored point"]
+  A -->|no| W["Left to Windows untouched"]
+  N --> D[("That app's virtual display")]
+  M --> D
+```
+
+Mapping is per Android package and off by default, so a key is only intercepted while a profile you
+armed is in front.
+
+### A note on the name
+
+The product is **WINAPK**; a few internal identifiers still read `droidwin`, and that is deliberate:
+
+| Where | Value | Why it stays |
+| :--- | :--- | :--- |
+| Cargo package and binary target | `droidwin` | Renaming the crate and its `droidwin_lib` target is a build-wide change with no user-visible benefit |
+| Bundle identifier | `app.droidwin.desktop` | It is the on-disk data directory (settings, mappings, database); changing it would orphan every existing install |
+| AVD on disk | `DroidWin_API36` | Renaming it would orphan the system image and settings of anyone upgrading |
+| Shipped executable | `WINAPK.exe` | `mainBinaryName` in `tauri.conf.json`, so the shortcut, installer and title bar all read WINAPK |
 
 ---
 
-## 🤖 Agent control (MCP + CLI)
+## Agent control (MCP + CLI)
 
 WINAPK ships an MCP server bound to loopback with a per-session token — **34 tools**, from runtime
-status and package management to screenshots, taps and workflows. The `WINAPK` CLI is a client of
-the same endpoint, so it never starts a second emulator.
+status and package management to screenshots, taps, workflows and triggers. The `WINAPK` CLI is a
+client of the same endpoint, so it never starts a second emulator.
 
 ```powershell
 WINAPK status
@@ -226,7 +352,7 @@ WINAPK apps list
 WINAPK apps open com.fingersoft.hillclimb
 WINAPK mapping save com.fingersoft.hillclimb --key W --tap 49,61
 WINAPK capture screenshot
-WINAPK tools              # 27 commands, 4 KB — far smaller than tools/list
+WINAPK tools              # every command name and usage, no schema payload
 ```
 
 Point an MCP client at the stdio bridge:
@@ -242,6 +368,12 @@ Point an MCP client at the stdio bridge:
 }
 ```
 
+**Boundaries.** The server listens on `127.0.0.1` only, on a port picked per session, and requires
+`Authorization: Bearer <token>` (or an `x-droidwin-token` header) on every request, with Host and
+Origin checks. The token is regenerated each session and written to the endpoint file in the app data
+directory — the file exists only while the agent endpoint is enabled. Exit codes are `0` success,
+`1` refused, `2` endpoint unreachable, `64` usage.
+
 <sub>Transport, tool schemas, examples and troubleshooting: [docs/MCP_AGENT.md](docs/MCP_AGENT.md) · CLI: [docs/CLI.md](docs/CLI.md)</sub>
 
 ---
@@ -255,18 +387,6 @@ multi-line, saved locally, and read back at startup — so the name is already i
 This is **display branding only**. The executable, the installer's product name and the bundle
 identifier are build-time values and are left alone, which is what keeps shortcuts and updates
 working.
-
----
-
-## Architecture
-
-<div align="center">
-  <img src="docs/images/architecture.svg" alt="Three layers: the Tauri desktop shell (main window plus four overlay windows), the Rust core (runtime, input, overlay, capture, agent), and the Android runtime (one emulator with one virtual display per app)" width="100%" />
-</div>
-
-One owner per concern: the runtime owns processes, `InputController` owns profiles and key decisions,
-`Overlay` owns window geometry and visibility, and the React layer renders whatever the backend
-pushes — it never mirrors state.
 
 ---
 
@@ -306,13 +426,11 @@ performance numbers).
 - ARM-only packages cannot run on this image, and apps that insist on Google Play services usually
   fail. WINAPK reports what Android reports rather than predicting compatibility.
 - Recording an app's own virtual display is not supported by `screenrecord`; the button is therefore
-  not offered.
+  not offered for an app window. Recording the phone's display works.
 - Rotating reopens the window on the other orientation surface; scrcpy ignores a requested window
   size for a new display, so the frame can keep the old shape.
 - `Ctrl+Shift+R` cannot be rebound yet; the other six can.
 - No control detection: mapping a game is place → key, never a guessed profile.
-- The AVD WINAPK creates is still named `DroidWin_API36` on disk. That identifier is kept on purpose:
-  renaming it would orphan the system image and settings of anyone upgrading from an earlier build.
 
 ---
 
@@ -323,7 +441,7 @@ performance numbers).
 | The setup screen appears on first launch | Expected on a PC with no Android SDK. Press **Install Android runtime** and accept Google's licence terms — or point WINAPK at an SDK you already have: *Settings → Android runtime → Choose SDK folder*. |
 | The Runtime screen says acceleration is unavailable | Virtualisation is off in firmware or Hyper-V is not enabled. WINAPK still runs, but the emulator will be slow; the screen reports what the emulator itself answered rather than guessing. |
 | A window opens black or empty | Some apps refuse a secondary display or draw only on display 0. Open the **Attention** panel: it names the app, shows the evidence it collected, and offers *Retry launch* or *Reopen window*. |
-| A mapped key does nothing | Mapping is per Android package and is **off** until you enable it: *Applications → Controls* on that app's row. |
+| A mapped key does nothing | Mapping is per Android package and is **off** until you enable it: *Applications → Controls* on that app's row, or **Mappings armed** in the mapping panel. |
 | A shortcut chord is refused | A chord needs a modifier, and one already used by another action or app mapping is refused with a reason instead of being silently shadowed. Pick another chord. |
 | `WINAPK status` reports an unreachable endpoint | The agent endpoint exists only while WINAPK runs with it enabled (*Agent* screen). The endpoint file is rewritten per session, so a stale one is reported as unreachable rather than retried forever. |
 | An emulator outlives the app | *Settings → Keep the emulator running after WINAPK closes* is on. Turn it off to stop the emulator WINAPK started. An emulator you started yourself is never touched. |
@@ -341,7 +459,7 @@ untrusted APKs still deserves a dedicated Windows account.
 
 ## Roadmap
 
-#### Shipped
+### Shipped and verified
 
 - [x] One window per app, on its own virtual display
 - [x] Click-to-place key mapping, saved per Android package
@@ -350,16 +468,21 @@ untrusted APKs still deserves a dedicated Windows account.
 - [x] Customisable application name
 - [x] Compact layout down to 900×560
 
-#### Next
+### Shipped, with the limit documented
 
-These are deliberately not shipped yet, rather than half-working:
+- [ ] **Rotation** — the window reopens on the other surface, but the frame keeps its old shape
+  because scrcpy ignores a requested size for a new display
+- [ ] **Recording an app window** — the phone's display records; a virtual display cannot, so the
+  button is not offered for an app rather than pretending
+- [ ] **Installer verification** — the installer is built and its hash is recorded, but it has not
+  been installed and uninstalled on a clean machine
 
-- [ ] **Recording an app's own virtual display** — `screenrecord` refuses a virtual display, so the
-  button is not offered rather than pretending to record
-- [ ] **Rebinding `Ctrl+Shift+R`** — the other six universal chords can be changed
-- [ ] **Control detection** — mapping a game is click → key; WINAPK does not guess a profile from a screenshot
-- [ ] **Frame shape after rotation** — scrcpy ignores a requested window size for a new display
-- [ ] **Installer test on a clean machine** — the current build was not installed or uninstalled on one
+### Planned
+
+- [ ] Rebinding `Ctrl+Shift+R` — the other six universal chords can be changed today
+- [ ] Control detection — mapping a game is click → key; WINAPK does not guess a profile from a
+  screenshot
+- [ ] A clean-machine verification pass, including Windows 10
 
 ---
 
@@ -372,6 +495,22 @@ src-tauri/tests/     live harnesses (mapping, capture, isolation, phones)
 release/WINAPK/      shipped EXE, installer, README and build report
 docs/                runtime setup, host isolation, MCP, CLI, decisions, images
 ```
+
+---
+
+## Contributing
+
+Issues and pull requests are welcome. A useful change comes with the check that covers it:
+
+```powershell
+pnpm install
+pnpm test
+cargo test --manifest-path src-tauri/Cargo.toml --lib
+cargo fmt --check
+```
+
+Both test suites must stay green, and behaviour that only shows up on Windows should say which build
+it was seen on. If a limitation above changes, update it in the same pull request.
 
 ---
 

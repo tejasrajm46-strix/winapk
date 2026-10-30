@@ -69,12 +69,16 @@ developer: **WINAPK installs its own Android runtime on first run**.
 
 ## Verification
 
+Counts below are from the 30 October build and match
+[release/WINAPK/BUILD_REPORT.txt](../release/WINAPK/BUILD_REPORT.txt), which is
+the authoritative record for the shipped binaries.
+
 | Check | Result |
 | --- | --- |
-| `cargo test --lib` | 251 passed |
-| `pnpm test` | 99 passed (10 files) |
+| `cargo test --lib` | 271 passed |
+| `pnpm test` | 122 passed (10 files) |
 | `cargo fmt --check` | clean |
-| `pnpm tauri build` | installer built (12.87 MiB) |
+| `pnpm tauri build` | installer built (13.00 MiB) |
 | Fresh install into an empty directory (no SDK, no JRE, no AVD) | downloaded, verified, installed, AVD created, runtime Ready · API 36 |
 | Reuse of an existing SDK | setup screen skipped, no download |
 | First-run screen against an empty SDK | shown, install disabled until consent |
